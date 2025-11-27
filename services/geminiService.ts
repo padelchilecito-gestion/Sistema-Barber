@@ -1,18 +1,18 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { ParsedBookingRequest, ServiceItem, ShopSettings, ChatMessage, VisagismoResult } from "../types";
 
-// Usamos el estándar de Vite para variables de entorno
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 if (!apiKey) {
   console.error("⚠️ ERROR CRÍTICO: No se encontró VITE_GEMINI_API_KEY.");
 }
 
-// Inicializamos la librería oficial para Web
 const genAI = new GoogleGenerativeAI(apiKey || "dummy-key");
 
-// CONSTANTE DEL MODELO: Usamos la versión específica '-001' para evitar errores 404
-const MODEL_NAME = "gemini-1.5-flash-latest";
+// --- CAMBIO CRÍTICO 2025 ---
+// Las versiones 1.5 han sido retiradas.
+// Usamos la versión estable actual de la serie 2.5.
+const MODEL_NAME = "gemini-2.5-flash"; 
 
 const formatScheduleForAI = (settings: ShopSettings): string => {
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -29,7 +29,6 @@ const formatScheduleForAI = (settings: ShopSettings): string => {
   }).join('\n');
 };
 
-// Función auxiliar para limpiar la respuesta de la IA antes de parsear
 const cleanResponse = (text: string): string => {
   let cleaned = text.trim();
   if (cleaned.startsWith('```json')) {
@@ -139,7 +138,7 @@ Responde SOLO con un JSON válido.
       console.error("AI Error:", error);
       return {
           thought_process: "Error en IA, modo fallback",
-          suggestedReply: "Lo siento, tuve un error técnico procesando tu solicitud. Por favor intenta de nuevo.",
+          suggestedReply: "Lo siento, estamos actualizando nuestros sistemas de IA a la última versión. Por favor intenta de nuevo en un momento.",
           isComplete: false
       };
   }
