@@ -12,7 +12,7 @@ if (!apiKey) {
 const genAI = new GoogleGenerativeAI(apiKey || "dummy-key");
 
 // CONSTANTE DEL MODELO: Usamos la versión específica '-001' para evitar errores 404
-const MODEL_NAME = "gemini-1.5-flash";
+const MODEL_NAME = "gemini-pro";
 
 const formatScheduleForAI = (settings: ShopSettings): string => {
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
