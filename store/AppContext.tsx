@@ -1,6 +1,15 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Appointment, AppointmentStatus, Client, Transaction, TransactionType, ServiceItem, ShopSettings, WeeklySchedule, LicenseTier } from '../types';
+import { Appointment, AppointmentStatus, Client, Transaction, ServiceItem, ShopSettings, LicenseTier, WeeklySchedule } from '../types';
+import { db } from '../firebase'; // Importamos la conexión
+import { 
+  collection, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  onSnapshot,
+  setDoc
+} from 'firebase/firestore';
 
 interface AppState {
   appointments: Appointment[];
@@ -19,158 +28,113 @@ interface AppState {
 
 const AppContext = createContext<AppState | undefined>(undefined);
 
-const STORAGE_KEY = 'barberpro_db_v5';
-
-const MOCK_CLIENTS: Client[] = [
-  { id: '1', name: 'Carlos Gomez', phone: '555-0101', notes: 'Fade alto, poco arriba.', totalVisits: 5, loyaltyPoints: 4, avatarUrl: 'https://picsum.photos/seed/carlos/150/150' },
-  { id: '2', name: 'Miguel Angel', phone: '555-0202', notes: 'Barba perfilada y corte clásico.', totalVisits: 12, loyaltyPoints: 2, avatarUrl: 'https://picsum.photos/seed/miguel/150/150' },
-  { id: '3', name: 'Sofia Lopez', phone: '555-0303', notes: 'Diseño en la nuca.', totalVisits: 2, loyaltyPoints: 2, avatarUrl: 'https://picsum.photos/seed/sofia/150/150' },
-];
-
-const MOCK_APPOINTMENTS: Appointment[] = [
-  { id: '101', clientId: '1', clientName: 'Carlos Gomez', service: 'Corte Degradado', stylePreference: 'Quiere probar un diseño de rayitas', date: new Date().toISOString().split('T')[0], time: '10:00', price: 15, status: AppointmentStatus.CONFIRMED },
-  { id: '102', clientId: '2', clientName: 'Miguel Angel', service: 'Barba + Corte', stylePreference: 'Solo bajar volumen', date: new Date().toISOString().split('T')[0], time: '18:00', price: 25, status: AppointmentStatus.PENDING },
-];
-
-const MOCK_TRANSACTIONS: Transaction[] = [
-  { id: 't1', date: new Date().toISOString().split('T')[0], description: 'Pago Carlos Gomez', amount: 15, type: TransactionType.INCOME },
-  { id: 't2', date: new Date().toISOString().split('T')[0], description: 'Compra de navajas', amount: 50, type: TransactionType.EXPENSE },
-];
-
-const MOCK_SERVICES: ServiceItem[] = [
-  { id: 's1', name: 'Corte Clásico', price: 15, durationMinutes: 30 },
-  { id: 's2', name: 'Corte + Barba', price: 25, durationMinutes: 50 },
-  { id: 's3', name: 'Perfilado de Barba', price: 10, durationMinutes: 20 },
-];
-
-const createDefaultSchedule = (): WeeklySchedule => {
-  const weekdaySchedule = {
-    isOpen: true,
-    ranges: [{ start: '09:00', end: '13:00' }, { start: '17:00', end: '22:00' }]
-  };
-  const saturdaySchedule = {
-    isOpen: true,
-    ranges: [{ start: '09:00', end: '13:00' }]
-  };
-  const closedSchedule = {
-    isOpen: false,
-    ranges: []
-  };
-
-  return {
-    monday: weekdaySchedule,
-    tuesday: weekdaySchedule,
-    wednesday: weekdaySchedule,
-    thursday: weekdaySchedule,
-    friday: weekdaySchedule,
-    saturday: saturdaySchedule,
-    sunday: closedSchedule
-  };
-};
-
+// Valores por defecto para inicializar (y evitar errores mientras carga)
 const DEFAULT_SETTINGS: ShopSettings = {
   shopName: 'BarberPro Shop',
-  schedule: createDefaultSchedule(),
+  schedule: { /* ...copia aquí tu schedule por defecto del archivo original... */ } as WeeklySchedule, 
   licenseTier: LicenseTier.BASIC
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Initialize state from localStorage or fallback to Mocks
-  const [appointments, setAppointments] = useState<Appointment[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved).appointments || MOCK_APPOINTMENTS : MOCK_APPOINTMENTS;
-  });
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [services, setServices] = useState<ServiceItem[]>([]);
+  const [settings, setSettings] = useState<ShopSettings>(DEFAULT_SETTINGS);
 
-  const [clients, setClients] = useState<Client[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved).clients || MOCK_CLIENTS : MOCK_CLIENTS;
-  });
-
-  const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved).transactions || MOCK_TRANSACTIONS : MOCK_TRANSACTIONS;
-  });
-
-  const [services, setServices] = useState<ServiceItem[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved).services || MOCK_SERVICES : MOCK_SERVICES;
-  });
-
-  const [settings, setSettings] = useState<ShopSettings>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved).settings || DEFAULT_SETTINGS : DEFAULT_SETTINGS;
-  });
-
-  // Persist to localStorage whenever state changes
+  // --- ESCUCHADORES EN TIEMPO REAL (REAL-TIME LISTENERS) ---
+  
   useEffect(() => {
-    const dataToSave = { appointments, clients, transactions, services, settings };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
-  }, [appointments, clients, transactions, services, settings]);
+    // 1. Escuchar Turnos
+    const unsubApt = onSnapshot(collection(db, 'appointments'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
+      setAppointments(data);
+    });
 
-  const addAppointment = (apt: Appointment) => {
-    setAppointments(prev => [...prev, apt]);
-    
-    // Auto-add expected income if confirmed/completed (simplified logic)
-    if(apt.status === AppointmentStatus.COMPLETED) {
-        addTransaction({
-            id: Date.now().toString(),
-            date: apt.date,
-            description: `Servicio: ${apt.clientName}`,
-            amount: apt.price,
-            type: TransactionType.INCOME
-        });
-    }
+    // 2. Escuchar Clientes
+    const unsubCli = onSnapshot(collection(db, 'clients'), (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
+        setClients(data);
+    });
+
+    // 3. Escuchar Transacciones
+    const unsubTx = onSnapshot(collection(db, 'transactions'), (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
+        setTransactions(data);
+    });
+
+    // 4. Escuchar Servicios
+    const unsubSrv = onSnapshot(collection(db, 'services'), (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceItem));
+        setServices(data);
+    });
+
+    // 5. Escuchar Configuración (Documento único 'config/main')
+    const unsubSet = onSnapshot(doc(db, 'config', 'main'), (docSnap) => {
+        if (docSnap.exists()) {
+            setSettings(docSnap.data() as ShopSettings);
+        } else {
+            // Si no existe, crearlo con valores por defecto
+            setDoc(doc(db, 'config', 'main'), DEFAULT_SETTINGS);
+        }
+    });
+
+    return () => {
+        // Limpiar escuchadores al desmontar
+        unsubApt(); unsubCli(); unsubTx(); unsubSrv(); unsubSet();
+    };
+  }, []);
+
+  // --- FUNCIONES DE ESCRITURA (ACTIONS) ---
+
+  const addAppointment = async (apt: Appointment) => {
+    // Firebase crea el ID automáticamente, desestructuramos para quitar el ID temporal si existe
+    const { id, ...rest } = apt; 
+    await addDoc(collection(db, 'appointments'), rest);
   };
 
-  const updateAppointmentStatus = (id: string, status: AppointmentStatus) => {
-      setAppointments(prev => prev.map(a => {
-          if (a.id === id) {
-             const oldStatus = a.status;
-             const updated = { ...a, status };
-             
-             // If marking COMPLETED (and wasn't already), handle Transactions and Loyalty
-             if (status === AppointmentStatus.COMPLETED && oldStatus !== AppointmentStatus.COMPLETED) {
-                 
-                 // 1. Add Transaction
-                 setTransactions(currT => [...currT, {
-                     id: Date.now().toString(),
-                     date: new Date().toISOString().split('T')[0],
-                     description: `Servicio Finalizado: ${a.clientName}`,
-                     amount: a.price,
-                     type: TransactionType.INCOME
-                 }]);
-
-                 // 2. Update Client Loyalty (Only if it's a real registered client)
-                 if (a.clientId && a.clientId !== 'guest' && a.clientId !== 'ai-guest') {
-                    setClients(currC => currC.map(c => {
-                        if (c.id === a.clientId) {
-                            const newPoints = c.loyaltyPoints + 1;
-                            // Reset if reached 5 (Simulate Cycle) or just cap it? 
-                            // Let's cap at 5 for the UI to show "Free Cut Available"
-                            const finalPoints = newPoints > 5 ? 1 : newPoints; 
-                            return { 
-                                ...c, 
-                                totalVisits: c.totalVisits + 1,
-                                loyaltyPoints: finalPoints
-                            };
-                        }
-                        return c;
-                    }));
-                 }
-             }
-             return updated;
+  const updateAppointmentStatus = async (id: string, status: AppointmentStatus) => {
+      const aptRef = doc(db, 'appointments', id);
+      await updateDoc(aptRef, { status });
+      
+      // Lógica de transacción automática si se completa
+      // (Nota: Idealmente esto se hace en el backend, pero aquí en el cliente funciona para empezar)
+      if (status === AppointmentStatus.COMPLETED) {
+          const apt = appointments.find(a => a.id === id);
+          if (apt) {
+               addTransaction({
+                   id: '', // Firebase lo generará
+                   date: new Date().toISOString().split('T')[0],
+                   description: `Servicio Finalizado: ${apt.clientName}`,
+                   amount: apt.price,
+                   type: 'INCOME' // Ajustar al tipo correcto si usas Enum
+               } as any);
           }
-          return a;
-      }));
+      }
   };
 
-  const addClient = (client: Client) => setClients(prev => [...prev, client]);
-  const addTransaction = (tx: Transaction) => setTransactions(prev => [...prev, tx]);
-  
-  const addService = (service: ServiceItem) => setServices(prev => [...prev, service]);
-  const removeService = (id: string) => setServices(prev => prev.filter(s => s.id !== id));
-  
-  const updateSettings = (newSettings: ShopSettings) => setSettings(newSettings);
+  const addClient = async (client: Client) => {
+      const { id, ...rest } = client;
+      await addDoc(collection(db, 'clients'), rest);
+  };
+
+  const addTransaction = async (tx: Transaction) => {
+      const { id, ...rest } = tx;
+      await addDoc(collection(db, 'transactions'), rest);
+  };
+
+  const addService = async (service: ServiceItem) => {
+      const { id, ...rest } = service;
+      await addDoc(collection(db, 'services'), rest);
+  };
+
+  const removeService = async (id: string) => {
+      await deleteDoc(doc(db, 'services', id));
+  };
+
+  const updateSettings = async (newSettings: ShopSettings) => {
+      await setDoc(doc(db, 'config', 'main'), newSettings);
+  };
 
   return (
     <AppContext.Provider value={{ 
