@@ -11,6 +11,9 @@ if (!apiKey) {
 // Inicializamos la librería oficial para Web
 const genAI = new GoogleGenerativeAI(apiKey || "dummy-key");
 
+// CONSTANTE DEL MODELO: Usamos la versión específica '-001' para evitar errores 404
+const MODEL_NAME = "gemini-1.5-flash-001";
+
 const formatScheduleForAI = (settings: ShopSettings): string => {
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   
@@ -97,9 +100,8 @@ Responde SOLO con un JSON válido.
 `;
   
   try {
-      // Configuración del modelo usando la librería estable
       const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash",
+        model: MODEL_NAME,
         systemInstruction: systemInstruction,
         generationConfig: {
             responseMimeType: "application/json",
@@ -145,7 +147,7 @@ Responde SOLO con un JSON válido.
 
 export const suggestStyle = async (clientHistory: string): Promise<string> => {
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: MODEL_NAME });
         const result = await model.generateContent(`Eres un barbero experto. Sugiere un estilo brevemente (max 2 oraciones) basado en: ${clientHistory}`);
         return result.response.text() || "No se pudo generar una sugerencia.";
     } catch (e) {
@@ -156,7 +158,7 @@ export const suggestStyle = async (clientHistory: string): Promise<string> => {
 export const getVisagismAdvice = async (faceShape: string, hairType: string): Promise<VisagismoResult> => {
   try {
       const model = genAI.getGenerativeModel({ 
-          model: "gemini-1.5-flash",
+          model: MODEL_NAME,
           generationConfig: {
             responseMimeType: "application/json",
             responseSchema: {
