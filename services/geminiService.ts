@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { ParsedBookingRequest, ServiceItem, ShopSettings, ChatMessage, VisagismoResult } from "../types";
 
 // Usamos el estándar de Vite para variables de entorno
@@ -8,7 +8,8 @@ if (!apiKey) {
   console.error("⚠️ ERROR CRÍTICO: No se encontró VITE_GEMINI_API_KEY.");
 }
 
-const ai = new GoogleGenAI({ apiKey: apiKey || "dummy-key" });
+// Inicializamos la librería oficial para Web
+const genAI = new GoogleGenerativeAI(apiKey || "dummy-key");
 
 const formatScheduleForAI = (settings: ShopSettings): string => {
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -28,7 +29,6 @@ const formatScheduleForAI = (settings: ShopSettings): string => {
 // Función auxiliar para limpiar la respuesta de la IA antes de parsear
 const cleanResponse = (text: string): string => {
   let cleaned = text.trim();
-  // Si la IA devuelve bloques de código markdown, los quitamos
   if (cleaned.startsWith('```json')) {
     cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '');
   } else if (cleaned.startsWith('```')) {
@@ -83,10 +83,10 @@ ${servicesList}
 ${busySlots}
 
 ### SALIDA JSON (ESTRICTO):
-Responde SOLO con un JSON válido. No uses markdown. No pongas texto antes ni después.
+Responde SOLO con un JSON válido.
 {
-  "thought_process": "razonamiento breve...",
-  "suggestedReply": "respuesta para el usuario...",
+  "thought_process": "razonamiento...",
+  "suggestedReply": "respuesta...",
   "isComplete": boolean,
   "clientName": string | null,
   "date": string | null,
@@ -97,49 +97,47 @@ Responde SOLO con un JSON válido. No uses markdown. No pongas texto antes ni de
 `;
   
   try {
-      // CAMBIO IMPORTANTE: Usamos 'gemini-1.5-flash' que es estable para JSON
-      const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash", 
-        contents: `
+      // Configuración del modelo usando la librería estable
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-1.5-flash",
+        systemInstruction: systemInstruction,
+        generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: SchemaType.OBJECT,
+                properties: {
+                  thought_process: { type: SchemaType.STRING },
+                  clientName: { type: SchemaType.STRING, nullable: true },
+                  date: { type: SchemaType.STRING, nullable: true },
+                  time: { type: SchemaType.STRING, nullable: true },
+                  service: { type: SchemaType.STRING, nullable: true },
+                  stylePreference: { type: SchemaType.STRING, nullable: true },
+                  suggestedReply: { type: SchemaType.STRING },
+                  isComplete: { type: SchemaType.BOOLEAN }
+                },
+                required: ["suggestedReply", "isComplete", "thought_process"]
+            }
+        }
+      });
+
+      const result = await model.generateContent(`
         HISTORIAL:
         ${historyContext}
 
         MENSAJE USUARIO: "${currentMessage}"
-        `,
-        config: {
-          systemInstruction: systemInstruction,
-          responseMimeType: "application/json",
-          // Definimos el esquema pero confiamos en la limpieza manual también
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              thought_process: { type: Type.STRING },
-              clientName: { type: Type.STRING, nullable: true },
-              date: { type: Type.STRING, nullable: true },
-              time: { type: Type.STRING, nullable: true },
-              service: { type: Type.STRING, nullable: true },
-              stylePreference: { type: Type.STRING, nullable: true },
-              suggestedReply: { type: Type.STRING },
-              isComplete: { type: Type.BOOLEAN }
-            },
-            required: ["suggestedReply", "isComplete", "thought_process"]
-          }
-        }
-      });
+      `);
 
-      const text = response.text;
+      const text = result.response.text();
       if (!text) throw new Error("No response from AI");
       
-      // Limpiamos y parseamos
       const cleanText = cleanResponse(text);
       return JSON.parse(cleanText) as ParsedBookingRequest;
 
   } catch (error) {
       console.error("AI Error:", error);
-      // Fallback seguro para no romper la app
       return {
           thought_process: "Error en IA, modo fallback",
-          suggestedReply: "Lo siento, tuve un error procesando tu mensaje. ¿Podrías repetirlo?",
+          suggestedReply: "Lo siento, tuve un error técnico procesando tu solicitud. Por favor intenta de nuevo.",
           isComplete: false
       };
   }
@@ -147,49 +145,45 @@ Responde SOLO con un JSON válido. No uses markdown. No pongas texto antes ni de
 
 export const suggestStyle = async (clientHistory: string): Promise<string> => {
     try {
-        const response = await ai.models.generateContent({
-            model: "gemini-1.5-flash",
-            contents: `Eres un barbero experto. Sugiere un estilo brevemente (max 2 oraciones) basado en: ${clientHistory}`,
-        });
-        return response.text || "No se pudo generar una sugerencia.";
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result = await model.generateContent(`Eres un barbero experto. Sugiere un estilo brevemente (max 2 oraciones) basado en: ${clientHistory}`);
+        return result.response.text() || "No se pudo generar una sugerencia.";
     } catch (e) {
         return "Servicio de estilo no disponible.";
     }
 }
 
 export const getVisagismAdvice = async (faceShape: string, hairType: string): Promise<VisagismoResult> => {
-  const prompt = `
-    Eres experto en Visagismo. Rostro: "${faceShape}", Pelo: "${hairType}".
-    Sugiere 3 cortes. Responde SOLO JSON.
-  `;
-
   try {
-      const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              faceShape: { type: Type.STRING },
-              recommendations: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    name: { type: Type.STRING },
-                    description: { type: Type.STRING },
+      const model = genAI.getGenerativeModel({ 
+          model: "gemini-1.5-flash",
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: SchemaType.OBJECT,
+                properties: {
+                  faceShape: { type: SchemaType.STRING },
+                  recommendations: {
+                    type: SchemaType.ARRAY,
+                    items: {
+                      type: SchemaType.OBJECT,
+                      properties: {
+                        name: { type: SchemaType.STRING },
+                        description: { type: SchemaType.STRING },
+                      }
+                    }
                   }
                 }
-              }
             }
           }
-        }
       });
 
-      const text = response.text;
-      if (!text) throw new Error("AI failed");
+      const result = await model.generateContent(`
+        Eres experto en Visagismo. Rostro: "${faceShape}", Pelo: "${hairType}".
+        Sugiere 3 cortes. Responde SOLO JSON.
+      `);
+
+      const text = result.response.text();
       return JSON.parse(cleanResponse(text)) as VisagismoResult;
   } catch (e) {
       console.error(e);
