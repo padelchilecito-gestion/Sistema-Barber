@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Appointment, AppointmentStatus, Client, Transaction, ServiceItem, ShopSettings, LicenseTier, WeeklySchedule } from '../types';
-import { db } from '../firebase'; // Importamos la conexión
+import { db } from '../firebase'; 
 import { 
   collection, 
   addDoc, 
@@ -28,67 +28,93 @@ interface AppState {
 
 const AppContext = createContext<AppState | undefined>(undefined);
 
-// Valores por defecto para inicializar (y evitar errores mientras carga)
+// --- 1. FUNCIÓN DE HORARIOS POR DEFECTO COMPLETA ---
+const createDefaultSchedule = (): WeeklySchedule => {
+  const weekdaySchedule = {
+    isOpen: true,
+    ranges: [{ start: '09:00', end: '13:00' }, { start: '17:00', end: '22:00' }]
+  };
+  const saturdaySchedule = {
+    isOpen: true,
+    ranges: [{ start: '09:00', end: '13:00' }]
+  };
+  const closedSchedule = {
+    isOpen: false,
+    ranges: []
+  };
+
+  return {
+    monday: weekdaySchedule,
+    tuesday: weekdaySchedule,
+    wednesday: weekdaySchedule,
+    thursday: weekdaySchedule,
+    friday: weekdaySchedule,
+    saturday: saturdaySchedule,
+    sunday: closedSchedule
+  };
+};
+
 const DEFAULT_SETTINGS: ShopSettings = {
   shopName: 'BarberPro Shop',
-  schedule: { /* ...copia aquí tu schedule por defecto del archivo original... */ } as WeeklySchedule, 
+  schedule: createDefaultSchedule(),
   licenseTier: LicenseTier.BASIC
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Inicializamos con DEFAULT_SETTINGS para evitar errores antes de que cargue Firebase
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [settings, setSettings] = useState<ShopSettings>(DEFAULT_SETTINGS);
 
-  // --- ESCUCHADORES EN TIEMPO REAL (REAL-TIME LISTENERS) ---
-  
   useEffect(() => {
-    // 1. Escuchar Turnos
     const unsubApt = onSnapshot(collection(db, 'appointments'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
       setAppointments(data);
     });
 
-    // 2. Escuchar Clientes
     const unsubCli = onSnapshot(collection(db, 'clients'), (snapshot) => {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
         setClients(data);
     });
 
-    // 3. Escuchar Transacciones
     const unsubTx = onSnapshot(collection(db, 'transactions'), (snapshot) => {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
         setTransactions(data);
     });
 
-    // 4. Escuchar Servicios
     const unsubSrv = onSnapshot(collection(db, 'services'), (snapshot) => {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceItem));
         setServices(data);
     });
 
-    // 5. Escuchar Configuración (Documento único 'config/main')
+    // --- LÓGICA DE AUTO-REPARACIÓN DE CONFIGURACIÓN ---
     const unsubSet = onSnapshot(doc(db, 'config', 'main'), (docSnap) => {
         if (docSnap.exists()) {
-            setSettings(docSnap.data() as ShopSettings);
+            const data = docSnap.data() as ShopSettings;
+            
+            // VERIFICACIÓN DE SEGURIDAD:
+            // Si la data descargada no tiene horarios válidos (está corrupta), forzamos la reparación.
+            if (!data.schedule || !data.schedule.monday) {
+                console.warn("Configuración corrupta detectada. Reparando automáticamente...");
+                setDoc(doc(db, 'config', 'main'), DEFAULT_SETTINGS); // Sobrescribe en Firebase
+                setSettings(DEFAULT_SETTINGS); // Usa default localmente
+            } else {
+                setSettings(data);
+            }
         } else {
-            // Si no existe, crearlo con valores por defecto
+            // Si no existe, creamos la configuración inicial
             setDoc(doc(db, 'config', 'main'), DEFAULT_SETTINGS);
         }
     });
 
     return () => {
-        // Limpiar escuchadores al desmontar
         unsubApt(); unsubCli(); unsubTx(); unsubSrv(); unsubSet();
     };
   }, []);
 
-  // --- FUNCIONES DE ESCRITURA (ACTIONS) ---
-
   const addAppointment = async (apt: Appointment) => {
-    // Firebase crea el ID automáticamente, desestructuramos para quitar el ID temporal si existe
     const { id, ...rest } = apt; 
     await addDoc(collection(db, 'appointments'), rest);
   };
@@ -97,17 +123,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const aptRef = doc(db, 'appointments', id);
       await updateDoc(aptRef, { status });
       
-      // Lógica de transacción automática si se completa
-      // (Nota: Idealmente esto se hace en el backend, pero aquí en el cliente funciona para empezar)
       if (status === AppointmentStatus.COMPLETED) {
           const apt = appointments.find(a => a.id === id);
           if (apt) {
                addTransaction({
-                   id: '', // Firebase lo generará
+                   id: '', 
                    date: new Date().toISOString().split('T')[0],
                    description: `Servicio Finalizado: ${apt.clientName}`,
                    amount: apt.price,
-                   type: 'INCOME' // Ajustar al tipo correcto si usas Enum
+                   type: 'INCOME' as any
                } as any);
           }
       }
