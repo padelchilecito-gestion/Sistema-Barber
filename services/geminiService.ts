@@ -1,8 +1,15 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { ParsedBookingRequest, ServiceItem, ShopSettings, ChatMessage, VisagismoResult } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// CORRECCIÓN PRINCIPAL: Usamos el estándar de Vite para variables de entorno
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+// Validación de seguridad para desarrollo
+if (!apiKey) {
+  console.error("⚠️ ERROR CRÍTICO: No se encontró VITE_GEMINI_API_KEY. Revisa tus variables de entorno en Vercel o .env.local");
+}
+
+const ai = new GoogleGenAI({ apiKey: apiKey || "dummy-key" }); // "dummy-key" evita que la app explote al iniciar si falta la clave, aunque la llamada fallará luego.
 
 const formatScheduleForAI = (settings: ShopSettings): string => {
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
