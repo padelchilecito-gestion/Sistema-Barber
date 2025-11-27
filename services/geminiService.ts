@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { ParsedBookingRequest, ServiceItem, ShopSettings, ChatMessage, VisagismoResult } from "../types";
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -9,9 +9,7 @@ if (!apiKey) {
 
 const genAI = new GoogleGenerativeAI(apiKey || "dummy-key");
 
-// --- CAMBIO CRÍTICO 2025 ---
-// Las versiones 1.5 han sido retiradas.
-// Usamos la versión estable actual de la serie 2.5.
+// Usamos el modelo 2.5 que sabemos que te funciona (no da 404)
 const MODEL_NAME = "gemini-2.5-flash"; 
 
 const formatScheduleForAI = (settings: ShopSettings): string => {
@@ -29,13 +27,23 @@ const formatScheduleForAI = (settings: ShopSettings): string => {
   }).join('\n');
 };
 
+// --- MEJORA: LIMPIEZA AGRESIVA DE JSON ---
 const cleanResponse = (text: string): string => {
   let cleaned = text.trim();
-  if (cleaned.startsWith('```json')) {
-    cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '');
-  } else if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```/, '').replace(/```$/, '');
+  
+  // 1. Quitar bloques de markdown ```json ... ```
+  if (cleaned.includes('```')) {
+    cleaned = cleaned.replace(/```json/g, '').replace(/```/g, '');
   }
+
+  // 2. Buscar el primer '{' y el último '}' para ignorar texto basura alrededor
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+
+  if (firstBrace !== -1 && lastBrace !== -1) {
+    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+  }
+
   return cleaned.trim();
 };
 
@@ -61,40 +69,34 @@ export const parseBookingMessage = async (
       `${msg.role === 'user' ? 'CLIENT/USER' : 'AI_AGENT'} said: "${msg.text}"`
   ).join('\n');
 
+  // INSTRUCCIÓN REFORZADA: Exigimos formato estricto
   const systemInstruction = `
-Eres "BarberPro AI", el asistente inteligente y experto de una barbería premium.
+Eres "BarberPro AI", asistente de barbería.
 
-TIENES DOS MODOS DE OPERACIÓN:
+MODO: ${isDirectClientMode ? 'Cliente Web Directo' : 'Asistente Admin (WhatsApp)'}.
+OBJETIVO: Agendar citas. NO confirmes sin Nombre, Fecha y Hora.
 
-### MODO 1: INTERACCIÓN CON CLIENTE (Auto-Reserva)
-- ${isDirectClientMode ? 'Hablas DIRECTAMENTE con el cliente en la Web App.' : 'Asistente del barbero para WhatsApp.'}
-- Objetivo: Guiar al usuario para agendar.
-- NUNCA confirmes un turno (isComplete: true) sin tener: Nombre, Fecha (YYYY-MM-DD) y Hora (HH:mm) validada.
-- Sé conciso.
+CONTEXTO:
+- HOY: ${dayName}, ${todayISO}
+- HORARIOS: \n${scheduleString}
+- SERVICIOS: \n${servicesList}
+- OCUPADO: \n${busySlots}
 
-### MODO 2: VISAGISMO
-- Si piden recomendación, analiza rostro/pelo y sugiere.
+FORMATO DE RESPUESTA OBLIGATORIO (JSON PURO):
+Debes responder SIEMPRE con un único objeto JSON válido.
+Usa comillas dobles para todas las claves y cadenas.
+NO escribas texto fuera del JSON.
 
-### CONTEXTO:
-1. AHORA: ${dayName}, ${todayISO}.
-2. HORARIOS:
-${scheduleString}
-3. SERVICIOS:
-${servicesList}
-4. OCUPADO:
-${busySlots}
-
-### SALIDA JSON (ESTRICTO):
-Responde SOLO con un JSON válido.
+Ejemplo válido:
 {
-  "thought_process": "razonamiento...",
-  "suggestedReply": "respuesta...",
-  "isComplete": boolean,
-  "clientName": string | null,
-  "date": string | null,
-  "time": string | null,
-  "service": string | null,
-  "stylePreference": string | null
+  "thought_process": "El cliente quiere cortar hoy...",
+  "suggestedReply": "Hola, tengo turno a las 10:00",
+  "isComplete": false,
+  "clientName": null,
+  "date": null,
+  "time": null,
+  "service": null,
+  "stylePreference": null
 }
 `;
   
@@ -102,43 +104,35 @@ Responde SOLO con un JSON válido.
       const model = genAI.getGenerativeModel({ 
         model: MODEL_NAME,
         systemInstruction: systemInstruction,
+        // Simplificamos la config para evitar conflictos con el modelo beta
         generationConfig: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: SchemaType.OBJECT,
-                properties: {
-                  thought_process: { type: SchemaType.STRING },
-                  clientName: { type: SchemaType.STRING, nullable: true },
-                  date: { type: SchemaType.STRING, nullable: true },
-                  time: { type: SchemaType.STRING, nullable: true },
-                  service: { type: SchemaType.STRING, nullable: true },
-                  stylePreference: { type: SchemaType.STRING, nullable: true },
-                  suggestedReply: { type: SchemaType.STRING },
-                  isComplete: { type: SchemaType.BOOLEAN }
-                },
-                required: ["suggestedReply", "isComplete", "thought_process"]
-            }
+            responseMimeType: "application/json"
         }
       });
 
       const result = await model.generateContent(`
-        HISTORIAL:
+        HISTORIAL CHAT:
         ${historyContext}
 
-        MENSAJE USUARIO: "${currentMessage}"
+        NUEVO MENSAJE: "${currentMessage}"
+        
+        RECORDATORIO: RESPONDE SOLO CON JSON VÁLIDO.
       `);
 
       const text = result.response.text();
-      if (!text) throw new Error("No response from AI");
+      console.log("Raw AI Response:", text); // Para depuración en consola si falla
+      
+      if (!text) throw new Error("Respuesta vacía de IA");
       
       const cleanText = cleanResponse(text);
       return JSON.parse(cleanText) as ParsedBookingRequest;
 
   } catch (error) {
       console.error("AI Error:", error);
+      // Fallback para que la app no se rompa
       return {
-          thought_process: "Error en IA, modo fallback",
-          suggestedReply: "Lo siento, estamos actualizando nuestros sistemas de IA a la última versión. Por favor intenta de nuevo en un momento.",
+          thought_process: "Error de formato o conexión.",
+          suggestedReply: "Tuve un pequeño error técnico. ¿Podrías repetirme qué día y hora buscabas?",
           isComplete: false
       };
   }
@@ -147,10 +141,10 @@ Responde SOLO con un JSON válido.
 export const suggestStyle = async (clientHistory: string): Promise<string> => {
     try {
         const model = genAI.getGenerativeModel({ model: MODEL_NAME });
-        const result = await model.generateContent(`Eres un barbero experto. Sugiere un estilo brevemente (max 2 oraciones) basado en: ${clientHistory}`);
-        return result.response.text() || "No se pudo generar una sugerencia.";
+        const result = await model.generateContent(`Eres barbero. Sugiere estilo breve (2 frases) para: ${clientHistory}`);
+        return result.response.text() || "Sin sugerencia.";
     } catch (e) {
-        return "Servicio de estilo no disponible.";
+        return "Servicio no disponible.";
     }
 }
 
@@ -158,30 +152,13 @@ export const getVisagismAdvice = async (faceShape: string, hairType: string): Pr
   try {
       const model = genAI.getGenerativeModel({ 
           model: MODEL_NAME,
-          generationConfig: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: SchemaType.OBJECT,
-                properties: {
-                  faceShape: { type: SchemaType.STRING },
-                  recommendations: {
-                    type: SchemaType.ARRAY,
-                    items: {
-                      type: SchemaType.OBJECT,
-                      properties: {
-                        name: { type: SchemaType.STRING },
-                        description: { type: SchemaType.STRING },
-                      }
-                    }
-                  }
-                }
-            }
-          }
+          generationConfig: { responseMimeType: "application/json" }
       });
 
       const result = await model.generateContent(`
-        Eres experto en Visagismo. Rostro: "${faceShape}", Pelo: "${hairType}".
-        Sugiere 3 cortes. Responde SOLO JSON.
+        Experto en Visagismo. Rostro: "${faceShape}", Pelo: "${hairType}".
+        3 cortes recomendados.
+        JSON format: { "faceShape": string, "recommendations": [{ "name": string, "description": string }] }
       `);
 
       const text = result.response.text();
