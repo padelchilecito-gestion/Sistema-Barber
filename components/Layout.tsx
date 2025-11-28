@@ -1,8 +1,9 @@
-
 import React from 'react';
-import { Calendar, Users, DollarSign, MessageSquare, Scissors, Home, Settings, Crown } from 'lucide-react';
+import { Calendar, Users, DollarSign, MessageSquare, Scissors, Home, Settings, Crown, LogOut } from 'lucide-react'; // Import LogOut
 import { useApp } from '../store/AppContext';
 import { LicenseTier } from '../types';
+import { auth } from '../firebase'; // Import auth
+import { signOut } from 'firebase/auth'; // Import signOut
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -14,13 +15,18 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
   const { settings } = useApp();
   const isPremium = settings.licenseTier === LicenseTier.PREMIUM;
 
+  const handleLogout = () => {
+    if (window.confirm('¿Deseas cerrar sesión?')) {
+      signOut(auth);
+    }
+  };
+
   const navItems = [
     { id: 'dashboard', icon: <Home size={24} />, label: 'Inicio' },
     { id: 'calendar', icon: <Calendar size={24} />, label: 'Agenda' },
     { id: 'assistant', icon: <MessageSquare size={24} />, label: 'IA Chat' },
     { id: 'clients', icon: <Users size={24} />, label: 'Clientes' },
     { id: 'finances', icon: <DollarSign size={24} />, label: 'Caja' },
-    // Conditionally render Premium tab
     ...(isPremium ? [{ id: 'premium', icon: <Crown size={24} className="text-amber-400" />, label: 'Premium' }] : []),
     { id: 'settings', icon: <Settings size={24} />, label: 'Config' },
   ];
@@ -35,9 +41,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
            </div>
            <h1 className="text-xl font-bold tracking-tight text-white">BarberPro</h1>
         </div>
-        <div className="w-8 h-8 rounded-full bg-slate-700 overflow-hidden border border-amber-500">
-            <img src="https://picsum.photos/id/1005/100/100" alt="Profile" />
-        </div>
+        <button onClick={handleLogout} className="text-slate-400 hover:text-white p-2">
+            <LogOut size={20} />
+        </button>
       </div>
 
       {/* Main Content Area */}
@@ -50,18 +56,29 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
         <div className="bg-amber-500 p-2 rounded-xl text-slate-900 mb-4">
              <Scissors size={28} />
         </div>
-        {navItems.map((item) => (
-            <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`p-3 rounded-xl transition-all duration-200 group relative ${activeTab === item.id ? 'bg-slate-700 text-amber-500' : 'text-slate-400 hover:text-slate-200'}`}
-            >
-                {item.icon}
-                <span className="absolute left-16 bg-slate-700 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                    {item.label}
-                </span>
-            </button>
-        ))}
+        
+        <div className="flex-1 flex flex-col gap-4 w-full px-2">
+            {navItems.map((item) => (
+                <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`p-3 rounded-xl transition-all duration-200 group relative flex justify-center ${activeTab === item.id ? 'bg-slate-700 text-amber-500' : 'text-slate-400 hover:text-slate-200'}`}
+                >
+                    {item.icon}
+                    <span className="absolute left-14 bg-slate-700 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                        {item.label}
+                    </span>
+                </button>
+            ))}
+        </div>
+
+        {/* Desktop Logout */}
+        <button 
+            onClick={handleLogout}
+            className="mb-4 text-slate-500 hover:text-red-400 p-3 hover:bg-slate-700/50 rounded-xl transition-colors" 
+            title="Cerrar Sesión">
+            <LogOut size={24} />
+        </button>
       </nav>
 
       {/* Mobile Bottom Navigation */}
