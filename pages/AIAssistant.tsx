@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { parseBookingMessage } from '../services/geminiService';
 import { ParsedBookingRequest, AppointmentStatus, ChatMessage } from '../types';
 import { useApp } from '../store/AppContext';
-import { MessageSquare, Send, Copy, Bot, User, CheckCircle, CalendarPlus, Loader2, Scissors, CalendarCheck } from 'lucide-react';
+import { MessageSquare, Send, Copy, Bot, User, CheckCircle, CalendarPlus, Loader2, Scissors, CalendarCheck, Smartphone } from 'lucide-react';
 
 interface AIAssistantProps {
     navigateToCalendar?: () => void;
@@ -13,7 +13,9 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
   const { addAppointment, appointments, services, settings } = useApp();
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
+  const [lastBookingData, setLastBookingData] = useState<ParsedBookingRequest | null>(null);
   
   const initialMessage = isGuestMode 
     ? '¡Hola! 👋 Soy el asistente virtual de la barbería. ¿Qué día y hora te gustaría reservar tu turno?'
@@ -36,17 +38,13 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
     scrollToBottom();
   }, [messages]);
 
-  // Helper to format appointments for the AI context
   const getBusySlotsContext = () => {
     const now = new Date();
-    // Filter appointments from today onwards
     const upcoming = appointments.filter(a => {
         const aptDate = new Date(`${a.date}T${a.time}`);
         return aptDate >= now && a.status !== AppointmentStatus.CANCELLED;
     });
-
     if (upcoming.length === 0) return "No hay turnos ocupados próximamente.";
-
     return upcoming.map(a => `- ${a.date} a las ${a.time} (${a.clientName})`).join('\n');
   };
 
@@ -59,17 +57,13 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
       text: inputMessage
     };
 
-    // Update UI immediately
     const updatedHistory = [...messages, userMsg];
     setMessages(updatedHistory);
     setInputMessage('');
     setLoading(true);
 
     try {
-      // Pass the busy slots, services, settings, mode AND THE HISTORY
       const busySlots = getBusySlotsContext();
-      
-      // We pass 'messages' (which includes the welcome message) + the new user message
       const parsed = await parseBookingMessage(userMsg.text, updatedHistory, busySlots, services, settings, isGuestMode);
       
       const botMsg: ChatMessage = {
@@ -94,40 +88,39 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
   };
 
   const handleCreateBooking = (data: ParsedBookingRequest) => {
-    // Default fallback values
     const date = data.date || new Date().toISOString().split('T')[0];
     const time = data.time || '10:00';
     
-    // Find price if service matches
     const matchedService = services.find(s => s.name.toLowerCase() === data.service?.toLowerCase());
     const price = matchedService ? matchedService.price : 15;
 
+    const initialStatus = isGuestMode ? AppointmentStatus.PENDING : AppointmentStatus.CONFIRMED;
+
     addAppointment({
         id: Date.now().toString(),
-        clientId: 'ai-guest',
+        clientId: isGuestMode ? 'web-guest' : 'whatsapp-import',
         clientName: data.clientName || (isGuestMode ? 'Cliente Web' : 'Cliente WhatsApp'),
         service: data.service || 'Corte General',
-        // CORRECCIÓN PRINCIPAL: Usamos '' si es undefined para evitar error en Firebase
         stylePreference: data.stylePreference || '', 
         date: date,
         time: time,
         price: price, 
-        status: AppointmentStatus.CONFIRMED // Auto confirm via bot
+        status: initialStatus 
     });
 
     if (isGuestMode) {
         setBookingConfirmed(true);
+        setLastBookingData(data); // Guardamos datos para el link de WhatsApp
         setMessages(prev => [...prev, {
             id: Date.now().toString(),
             role: 'assistant',
-            text: '¡Excelente! Tu turno ha sido confirmado. Te esperamos.'
+            text: '¡Solicitud enviada! Tu turno está pendiente de confirmación por la barbería.'
         }]);
     } else {
-        // Admin mode
         setMessages(prev => [...prev, {
             id: Date.now().toString(),
             role: 'assistant',
-            text: `¡Listo! Agendé a ${data.clientName || 'el cliente'} para el ${date} a las ${time}.`
+            text: `¡Listo! Agendé y confirmé a ${data.clientName || 'el cliente'} para el ${date} a las ${time}.`
         }]);
         if(navigateToCalendar) {
             setTimeout(() => navigateToCalendar(), 1500);
@@ -139,19 +132,37 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
       navigator.clipboard.writeText(text);
   };
 
+  const handleWhatsAppRedirect = () => {
+    if (!lastBookingData || !settings.contactPhone) return;
+
+    const message = `Hola! Acabo de solicitar un turno en la web:%0A%0A📅 *Fecha:* ${lastBookingData.date}%0A⏰ *Hora:* ${lastBookingData.time}%0A👤 *Nombre:* ${lastBookingData.clientName || 'Cliente'}%0A✂️ *Servicio:* ${lastBookingData.service || 'Corte'}%0A%0AQuedo a la espera de confirmación. Gracias!`;
+
+    window.open(`https://wa.me/${settings.contactPhone}?text=${message}`, '_blank');
+  };
+
   // SUCCESS STATE FOR GUEST
   if (isGuestMode && bookingConfirmed) {
       return (
           <div className="flex flex-col items-center justify-center h-full p-8 text-center animate-in zoom-in duration-500">
-              <div className="bg-green-500/10 p-8 rounded-full text-green-500 mb-8 border border-green-500/20 shadow-[0_0_30px_rgba(34,197,94,0.2)]">
+              <div className="bg-amber-500/10 p-8 rounded-full text-amber-500 mb-8 border border-amber-500/20 shadow-[0_0_30px_rgba(245,158,11,0.2)]">
                   <CalendarCheck size={80} />
               </div>
-              <h2 className="text-3xl font-bold text-white mb-2">¡Turno Reservado!</h2>
-              <p className="text-slate-300 mb-8 max-w-xs mx-auto">Tu cita ha quedada registrada correctamente en nuestra agenda.</p>
+              <h2 className="text-3xl font-bold text-white mb-2">Solicitud Enviada</h2>
+              <p className="text-slate-300 mb-8 max-w-xs mx-auto">Tu turno ha quedado registrado pendiente de confirmación.</p>
+              
+              {settings.contactPhone && (
+                <button 
+                    onClick={handleWhatsAppRedirect}
+                    className="w-full bg-green-600 hover:bg-green-500 text-white px-6 py-4 rounded-xl font-bold mb-4 flex items-center justify-center gap-3 shadow-lg shadow-green-900/20 active:scale-95 transition-all"
+                >
+                    <Smartphone size={20} /> Enviar Confirmación por WhatsApp
+                </button>
+              )}
+
               <button 
                   onClick={() => window.location.reload()}
-                  className="bg-slate-700 text-white px-8 py-3 rounded-xl font-medium hover:bg-slate-600 transition-colors">
-                  Reservar otro turno
+                  className="text-slate-500 font-medium hover:text-white transition-colors text-sm">
+                  Solicitar otro turno
               </button>
           </div>
       )
@@ -191,7 +202,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
                       }`}>
                           <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
                           
-                          {/* Copy Button (Only for Admin Mode) */}
                           {msg.role === 'assistant' && !isGuestMode && (
                               <button 
                                 onClick={() => copyToClipboard(msg.text)}
@@ -203,7 +213,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
                           )}
                       </div>
 
-                      {/* Sender Label */}
                       <span className="text-[10px] text-slate-500 mt-1 px-1 opacity-70">
                           {msg.role === 'user' ? 'Tú' : 'BarberBot'}
                       </span>
@@ -242,7 +251,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
                               <button 
                                 onClick={() => handleCreateBooking(msg.bookingData!)}
                                 className="w-full bg-green-600 hover:bg-green-500 text-white py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-lg shadow-green-900/20 active:scale-95 transform duration-100">
-                                  <CalendarPlus size={18} /> {isGuestMode ? '¡Confirmar Reserva!' : 'Agendar Turno'}
+                                  <CalendarPlus size={18} /> {isGuestMode ? '¡Enviar Solicitud!' : 'Agendar Turno'}
                               </button>
                           </div>
                       )}
