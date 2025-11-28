@@ -28,7 +28,6 @@ interface AppState {
 
 const AppContext = createContext<AppState | undefined>(undefined);
 
-// --- 1. FUNCIÓN DE HORARIOS POR DEFECTO COMPLETA ---
 const createDefaultSchedule = (): WeeklySchedule => {
   const weekdaySchedule = {
     isOpen: true,
@@ -56,12 +55,12 @@ const createDefaultSchedule = (): WeeklySchedule => {
 
 const DEFAULT_SETTINGS: ShopSettings = {
   shopName: 'BarberPro Shop',
+  contactPhone: '', // Por defecto vacío
   schedule: createDefaultSchedule(),
   licenseTier: LicenseTier.BASIC
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Inicializamos con DEFAULT_SETTINGS para evitar errores antes de que cargue Firebase
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -89,22 +88,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setServices(data);
     });
 
-    // --- LÓGICA DE AUTO-REPARACIÓN DE CONFIGURACIÓN ---
     const unsubSet = onSnapshot(doc(db, 'config', 'main'), (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data() as ShopSettings;
-            
-            // VERIFICACIÓN DE SEGURIDAD:
-            // Si la data descargada no tiene horarios válidos (está corrupta), forzamos la reparación.
             if (!data.schedule || !data.schedule.monday) {
-                console.warn("Configuración corrupta detectada. Reparando automáticamente...");
-                setDoc(doc(db, 'config', 'main'), DEFAULT_SETTINGS); // Sobrescribe en Firebase
-                setSettings(DEFAULT_SETTINGS); // Usa default localmente
+                console.warn("Configuración corrupta detectada. Reparando...");
+                setDoc(doc(db, 'config', 'main'), DEFAULT_SETTINGS); 
+                setSettings(DEFAULT_SETTINGS);
             } else {
                 setSettings(data);
             }
         } else {
-            // Si no existe, creamos la configuración inicial
             setDoc(doc(db, 'config', 'main'), DEFAULT_SETTINGS);
         }
     });
@@ -116,12 +110,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addAppointment = async (apt: Appointment) => {
     const { id, ...rest } = apt;
-    
-    // CORRECCIÓN DE SEGURIDAD: 
-    // Convertir a string JSON y volver a parsear elimina automáticamente cualquier campo 'undefined',
-    // lo cual protege contra el error de Firebase.
     const safeData = JSON.parse(JSON.stringify(rest));
-    
     await addDoc(collection(db, 'appointments'), safeData);
   };
 
