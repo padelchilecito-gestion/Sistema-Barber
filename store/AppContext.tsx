@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Appointment, AppointmentStatus, Client, Transaction, ServiceItem, ShopSettings, LicenseTier, WeeklySchedule } from '../types';
+import { Appointment, AppointmentStatus, Client, Transaction, ServiceItem, ShopSettings, LicenseTier, WeeklySchedule, GalleryItem } from '../types';
 import { db } from '../firebase'; 
 import { 
   collection, 
@@ -17,6 +17,7 @@ interface AppState {
   transactions: Transaction[];
   services: ServiceItem[];
   settings: ShopSettings;
+  gallery: GalleryItem[];
   addAppointment: (apt: Appointment) => void;
   addClient: (client: Client) => void;
   addTransaction: (tx: Transaction) => void;
@@ -24,19 +25,31 @@ interface AppState {
   addService: (service: ServiceItem) => void;
   removeService: (id: string) => void;
   updateSettings: (settings: ShopSettings) => void;
+  addPhoto: (photo: GalleryItem) => void;
+  removePhoto: (id: string) => void;
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
 
+// --- 1. CONFIGURACIÓN DE HORARIOS POR DEFECTO (CORREGIDA) ---
 const createDefaultSchedule = (): WeeklySchedule => {
+  // Lunes a Viernes: 9-13 y 18-22 (Corrección solicitada: Tarde arranca 18hs)
   const weekdaySchedule = {
     isOpen: true,
-    ranges: [{ start: '09:00', end: '13:00' }, { start: '17:00', end: '22:00' }]
+    ranges: [
+      { start: '09:00', end: '13:00' }, 
+      { start: '18:00', end: '22:00' }
+    ]
   };
+  
+  // Sábado: Solo mañana de 9 a 13
   const saturdaySchedule = {
     isOpen: true,
-    ranges: [{ start: '09:00', end: '13:00' }]
+    ranges: [
+      { start: '09:00', end: '13:00' }
+    ]
   };
+  
   const closedSchedule = {
     isOpen: false,
     ranges: []
@@ -48,14 +61,14 @@ const createDefaultSchedule = (): WeeklySchedule => {
     wednesday: weekdaySchedule,
     thursday: weekdaySchedule,
     friday: weekdaySchedule,
-    saturday: saturdaySchedule,
+    saturday: saturdaySchedule, // Aplica horario de sábado
     sunday: closedSchedule
   };
 };
 
 const DEFAULT_SETTINGS: ShopSettings = {
   shopName: 'BarberPro Shop',
-  contactPhone: '', // Por defecto vacío
+  contactPhone: '',
   schedule: createDefaultSchedule(),
   licenseTier: LicenseTier.BASIC
 };
@@ -66,8 +79,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [settings, setSettings] = useState<ShopSettings>(DEFAULT_SETTINGS);
+  const [gallery, setGallery] = useState<GalleryItem[]>([]);
 
   useEffect(() => {
+    // --- Listeners de Firebase ---
     const unsubApt = onSnapshot(collection(db, 'appointments'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
       setAppointments(data);
@@ -88,26 +103,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setServices(data);
     });
 
+    const unsubGal = onSnapshot(collection(db, 'gallery'), (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GalleryItem));
+        setGallery(data.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    });
+
+    // --- Sincronización de Configuración y Auto-Reparación ---
     const unsubSet = onSnapshot(doc(db, 'config', 'main'), (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data() as ShopSettings;
+            
+            // Si la data viene vacía o corrupta, o queremos forzar la actualización de estructura
             if (!data.schedule || !data.schedule.monday) {
-                console.warn("Configuración corrupta detectada. Reparando...");
+                console.warn("Configuración incompleta. Aplicando valores por defecto...");
                 setDoc(doc(db, 'config', 'main'), DEFAULT_SETTINGS); 
                 setSettings(DEFAULT_SETTINGS);
             } else {
                 setSettings(data);
             }
         } else {
+            // Si no existe el documento, lo creamos con los nuevos horarios
             setDoc(doc(db, 'config', 'main'), DEFAULT_SETTINGS);
+            setSettings(DEFAULT_SETTINGS);
         }
     });
 
     return () => {
-        unsubApt(); unsubCli(); unsubTx(); unsubSrv(); unsubSet();
+        unsubApt(); unsubCli(); unsubTx(); unsubSrv(); unsubSet(); unsubGal();
     };
   }, []);
 
+  // --- Actions ---
   const addAppointment = async (apt: Appointment) => {
     const { id, ...rest } = apt;
     const safeData = JSON.parse(JSON.stringify(rest));
@@ -155,11 +181,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await setDoc(doc(db, 'config', 'main'), newSettings);
   };
 
+  const addPhoto = async (photo: GalleryItem) => {
+      const { id, ...rest } = photo;
+      await addDoc(collection(db, 'gallery'), rest);
+  };
+
+  const removePhoto = async (id: string) => {
+      await deleteDoc(doc(db, 'gallery', id));
+  };
+
   return (
     <AppContext.Provider value={{ 
-        appointments, clients, transactions, services, settings,
+        appointments, clients, transactions, services, settings, gallery,
         addAppointment, addClient, addTransaction, updateAppointmentStatus,
-        addService, removeService, updateSettings
+        addService, removeService, updateSettings, addPhoto, removePhoto
     }}>
       {children}
     </AppContext.Provider>
