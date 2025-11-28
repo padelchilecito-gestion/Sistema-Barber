@@ -115,8 +115,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const addAppointment = async (apt: Appointment) => {
-    const { id, ...rest } = apt; 
-    await addDoc(collection(db, 'appointments'), rest);
+    const { id, ...rest } = apt;
+    
+    // CORRECCIÓN DE SEGURIDAD: 
+    // Convertir a string JSON y volver a parsear elimina automáticamente cualquier campo 'undefined',
+    // lo cual protege contra el error de Firebase.
+    const safeData = JSON.parse(JSON.stringify(rest));
+    
+    await addDoc(collection(db, 'appointments'), safeData);
   };
 
   const updateAppointmentStatus = async (id: string, status: AppointmentStatus) => {
