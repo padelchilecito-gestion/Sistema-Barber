@@ -9,7 +9,7 @@ if (!apiKey) {
 
 const genAI = new GoogleGenerativeAI(apiKey || "dummy-key");
 
-const MODEL_NAME = "gemini-2.0-flash"; // Actualizado a Flash 2.0 (más rápido/preciso) o usa gemini-1.5-flash
+const MODEL_NAME = "gemini-2.0-flash"; // Usamos modelo rápido
 
 // Mapa de traducción para que la IA no se confunda
 const DAY_TRANSLATIONS: Record<string, string> = {
@@ -89,7 +89,6 @@ OBJETIVO: Agendar citas. NO confirmes sin Nombre, Fecha y Hora.
 CONTEXTO ACTUAL:
 - FECHA: ${dayName}, ${todayISO}
 - HORA ACTUAL: ${currentTime}
-(Si el cliente pide turno para "hoy" y es mas tarde de las 13:00, el turno mañana ya no es válido).
 
 HORARIOS DE ATENCIÓN:
 ${scheduleString}
@@ -131,7 +130,6 @@ Usa comillas dobles. Sin markdown.
       `);
 
       const text = result.response.text();
-      // console.log("AI Debug:", text); 
       
       if (!text) throw new Error("Respuesta vacía de IA");
       
