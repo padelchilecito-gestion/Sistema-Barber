@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { parseBookingMessage } from '../services/geminiService';
-import { ParsedBookingRequest, AppointmentStatus, ChatMessage } from '../types';
+import { ParsedBookingRequest, AppointmentStatus, ChatMessage, WeeklySchedule } from '../types';
 import { useApp } from '../store/AppContext';
-import { MessageSquare, Send, Copy, Bot, User, CheckCircle, CalendarPlus, Loader2, Scissors, CalendarCheck, Smartphone, LogIn } from 'lucide-react'; // Import LogIn
+import { MessageSquare, Send, Copy, Bot, User, CheckCircle, CalendarPlus, Loader2, Scissors, CalendarCheck, Smartphone, LogIn } from 'lucide-react';
 
 interface AIAssistantProps {
     navigateToCalendar?: () => void;
@@ -48,6 +48,51 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
     return upcoming.map(a => `- ${a.date} a las ${a.time} (${a.clientName})`).join('\n');
   };
 
+  // --- NUEVA FUNCIÓN DE VALIDACIÓN ESTRICTA ---
+  const validateShopHours = (dateStr: string, timeStr: string, schedule: WeeklySchedule): { isOpen: boolean; reason?: string } => {
+    try {
+        // Creamos la fecha a mediodía para evitar problemas de zona horaria al obtener el día
+        const dateObj = new Date(`${dateStr}T12:00:00`); 
+        const dayIndex = dateObj.getDay(); // 0 = Domingo, 6 = Sábado
+        const dayKeys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const dayKey = dayKeys[dayIndex];
+        const dayName = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'][dayIndex];
+
+        const daySchedule = schedule[dayKey];
+
+        if (!daySchedule || !daySchedule.isOpen) {
+            return { isOpen: false, reason: `El local está cerrado los ${dayName}s.` };
+        }
+
+        // Convertir hora solicitada a minutos (ej: 14:00 -> 840 minutos)
+        const [reqH, reqM] = timeStr.split(':').map(Number);
+        const reqMinutes = reqH * 60 + reqM;
+
+        // Verificar si cae dentro de algún rango abierto
+        const isWithinRange = daySchedule.ranges.some(range => {
+            const [startH, startM] = range.start.split(':').map(Number);
+            const [endH, endM] = range.end.split(':').map(Number);
+            
+            const startMinutes = startH * 60 + startM;
+            const endMinutes = endH * 60 + endM;
+
+            // El turno debe empezar ANTES de la hora de cierre
+            return reqMinutes >= startMinutes && reqMinutes < endMinutes;
+        });
+
+        if (!isWithinRange) {
+            const rangesStr = daySchedule.ranges.map(r => `${r.start} a ${r.end}`).join(' o de ');
+            return { isOpen: false, reason: `Ese horario (${timeStr}) está fuera de turno. Los ${dayName}s abrimos de ${rangesStr}.` };
+        }
+
+        return { isOpen: true };
+
+    } catch (e) {
+        console.error("Error validando horario", e);
+        return { isOpen: true }; // Ante error técnico, dejamos pasar (fallback)
+    }
+  };
+
   const handleAnalyze = async () => {
     if (!inputMessage.trim()) return;
 
@@ -64,8 +109,23 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
 
     try {
       const busySlots = getBusySlotsContext();
+      
+      // 1. Obtenemos la respuesta de la IA
       const parsed = await parseBookingMessage(userMsg.text, updatedHistory, busySlots, services, settings, isGuestMode);
       
+      // 2. VALIDACIÓN DE SEGURIDAD (Override a la IA)
+      if (parsed.isComplete && parsed.date && parsed.time) {
+          const check = validateShopHours(parsed.date, parsed.time, settings.schedule);
+          
+          if (!check.isOpen) {
+              // Si está cerrado, forzamos a la IA a retractarse
+              parsed.isComplete = false;
+              parsed.suggestedReply = `Disculpa, revisé la agenda y ${check.reason?.toLowerCase()} ¿Te sirve otro horario?`;
+              // Opcional: Limpiamos la hora inválida para que no se confirme
+              parsed.time = undefined;
+          }
+      }
+
       const botMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -91,6 +151,17 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
     const date = data.date || new Date().toISOString().split('T')[0];
     const time = data.time || '10:00';
     
+    // Doble chequeo final antes de guardar (por si acaso)
+    const check = validateShopHours(date, time, settings.schedule);
+    if (!check.isOpen) {
+        setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'assistant',
+            text: `⚠️ Error: ${check.reason}`
+        }]);
+        return;
+    }
+
     const matchedService = services.find(s => s.name.toLowerCase() === data.service?.toLowerCase());
     const price = matchedService ? matchedService.price : 15;
 
@@ -138,17 +209,14 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
     window.open(`https://wa.me/${settings.contactPhone}?text=${message}`, '_blank');
   };
 
-  // Función para salir del modo invitado
   const handleAdminLogin = () => {
       localStorage.removeItem('barber_app_mode');
       window.location.href = '/';
   };
 
-  // SUCCESS STATE FOR GUEST
   if (isGuestMode && bookingConfirmed) {
       return (
           <div className="flex flex-col items-center justify-center h-full p-8 text-center animate-in zoom-in duration-500 relative">
-              {/* Botón Salir en Pantalla Exito */}
               <button onClick={handleAdminLogin} className="absolute top-4 right-4 text-xs text-slate-600 hover:text-white flex items-center gap-1">
                   <LogIn size={12}/> Soy Admin
               </button>
@@ -179,7 +247,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
 
   return (
     <div className={`flex flex-col h-full ${isGuestMode ? 'max-w-xl mx-auto' : ''}`}>
-      {/* HEADER */}
       <div className={`flex-none mb-4 flex items-center justify-between ${isGuestMode ? 'border-b border-slate-800 pb-4' : ''}`}>
           <div>
             <h2 className="text-2xl font-bold text-white flex items-center gap-3">
@@ -195,7 +262,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
             </p>
           </div>
           
-          {/* BOTÓN LOGIN PARA ADMIN (Solo visible en modo invitado) */}
           {isGuestMode && (
               <button 
                 onClick={handleAdminLogin}
@@ -207,13 +273,11 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
           )}
       </div>
 
-      {/* CHAT CONTAINER */}
       <div className={`flex-1 overflow-y-auto custom-scrollbar space-y-6 p-2 md:p-4 rounded-2xl ${isGuestMode ? '' : 'bg-slate-800/50 border border-slate-700 mb-4'}`}>
           {messages.map((msg) => (
               <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   
                   <div className={`flex flex-col max-w-[90%] md:max-w-[80%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                      {/* Bubble */}
                       <div className={`px-5 py-3.5 rounded-2xl relative shadow-md text-sm md:text-base ${
                           msg.role === 'user' 
                           ? 'bg-amber-600 text-white rounded-tr-sm' 
@@ -229,7 +293,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
                           {msg.role === 'user' ? 'Tú' : 'BarberBot'}
                       </span>
 
-                      {/* Booking Action Card */}
                       {msg.role === 'assistant' && msg.bookingData && msg.bookingData.isComplete && !bookingConfirmed && (
                           <div className="mt-3 bg-slate-800 border border-green-500/30 rounded-xl p-4 w-full animate-in slide-in-from-top-2 fade-in duration-500 shadow-xl">
                               <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-700">
@@ -261,7 +324,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
           <div ref={messagesEndRef} />
       </div>
 
-      {/* INPUT AREA */}
       <div className={`p-3 rounded-2xl border flex items-end gap-2 shadow-2xl ${isGuestMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-800 border-slate-700'}`}>
           <textarea 
             className="flex-1 bg-transparent text-white p-3 max-h-[120px] outline-none resize-none placeholder:text-slate-600 font-medium"
