@@ -48,27 +48,45 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
     return upcoming.map(a => `- ${a.date} a las ${a.time} (${a.clientName})`).join('\n');
   };
 
-  // --- NUEVA FUNCIÓN DE VALIDACIÓN ESTRICTA ---
+  // --- VALIDACIÓN DE HORARIOS REFORZADA ---
   const validateShopHours = (dateStr: string, timeStr: string, schedule: WeeklySchedule): { isOpen: boolean; reason?: string } => {
     try {
-        // Creamos la fecha a mediodía para evitar problemas de zona horaria al obtener el día
-        const dateObj = new Date(`${dateStr}T12:00:00`); 
+        console.log(`🔍 Validando: ${dateStr} a las ${timeStr}`);
+        
+        // 1. Parseo manual de la fecha para evitar errores de timezone
+        // dateStr viene como "YYYY-MM-DD"
+        const [year, month, day] = dateStr.split('-').map(Number);
+        // Creamos la fecha localmente (mes es 0-indexado en JS)
+        const dateObj = new Date(year, month - 1, day); 
+        
         const dayIndex = dateObj.getDay(); // 0 = Domingo, 6 = Sábado
         const dayKeys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
         const dayKey = dayKeys[dayIndex];
-        const dayName = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'][dayIndex];
+        const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        const dayName = dayNames[dayIndex];
+
+        console.log(`📅 Día detectado: ${dayName} (${dayKey})`);
 
         const daySchedule = schedule[dayKey];
 
-        if (!daySchedule || !daySchedule.isOpen) {
+        // 2. Verificación de existencia de configuración
+        if (!daySchedule) {
+             console.error("❌ Error Crítico: No existe configuración para", dayKey);
+             return { isOpen: false, reason: "Error de configuración en la agenda." };
+        }
+
+        if (!daySchedule.isOpen) {
             return { isOpen: false, reason: `El local está cerrado los ${dayName}s.` };
         }
 
-        // Convertir hora solicitada a minutos (ej: 14:00 -> 840 minutos)
+        // 3. Conversión de hora a minutos
         const [reqH, reqM] = timeStr.split(':').map(Number);
+        if (isNaN(reqH) || isNaN(reqM)) {
+             return { isOpen: false, reason: "Formato de hora inválido." };
+        }
         const reqMinutes = reqH * 60 + reqM;
 
-        // Verificar si cae dentro de algún rango abierto
+        // 4. Verificación de rangos
         const isWithinRange = daySchedule.ranges.some(range => {
             const [startH, startM] = range.start.split(':').map(Number);
             const [endH, endM] = range.end.split(':').map(Number);
@@ -76,20 +94,25 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
             const startMinutes = startH * 60 + startM;
             const endMinutes = endH * 60 + endM;
 
-            // El turno debe empezar ANTES de la hora de cierre
+            // Debug de rangos
+            // console.log(`Checking ${reqMinutes} inside ${startMinutes}-${endMinutes}`);
+
+            // El turno debe empezar >= apertura Y terminar < cierre
+            // Asumimos que el turno dura algo, así que debe ser estrictamente menor al cierre
             return reqMinutes >= startMinutes && reqMinutes < endMinutes;
         });
 
         if (!isWithinRange) {
             const rangesStr = daySchedule.ranges.map(r => `${r.start} a ${r.end}`).join(' o de ');
-            return { isOpen: false, reason: `Ese horario (${timeStr}) está fuera de turno. Los ${dayName}s abrimos de ${rangesStr}.` };
+            return { isOpen: false, reason: `Los ${dayName}s solo atendemos de ${rangesStr}.` };
         }
 
         return { isOpen: true };
 
     } catch (e) {
-        console.error("Error validando horario", e);
-        return { isOpen: true }; // Ante error técnico, dejamos pasar (fallback)
+        console.error("❌ Error CRÍTICO validando horario", e);
+        // CAMBIO IMPORTANTE: Si falla, asumimos CERRADO por seguridad.
+        return { isOpen: false, reason: "Ocurrió un error al verificar la disponibilidad." }; 
     }
   };
 
@@ -110,19 +133,16 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
     try {
       const busySlots = getBusySlotsContext();
       
-      // 1. Obtenemos la respuesta de la IA
       const parsed = await parseBookingMessage(userMsg.text, updatedHistory, busySlots, services, settings, isGuestMode);
       
-      // 2. VALIDACIÓN DE SEGURIDAD (Override a la IA)
+      // VALIDACIÓN DE SEGURIDAD (Override a la IA)
       if (parsed.isComplete && parsed.date && parsed.time) {
           const check = validateShopHours(parsed.date, parsed.time, settings.schedule);
           
           if (!check.isOpen) {
-              // Si está cerrado, forzamos a la IA a retractarse
               parsed.isComplete = false;
               parsed.suggestedReply = `Disculpa, revisé la agenda y ${check.reason?.toLowerCase()} ¿Te sirve otro horario?`;
-              // Opcional: Limpiamos la hora inválida para que no se confirme
-              parsed.time = undefined;
+              parsed.time = undefined; // Borramos la hora inválida
           }
       }
 
@@ -151,7 +171,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
     const date = data.date || new Date().toISOString().split('T')[0];
     const time = data.time || '10:00';
     
-    // Doble chequeo final antes de guardar (por si acaso)
+    // Doble chequeo final antes de guardar
     const check = validateShopHours(date, time, settings.schedule);
     if (!check.isOpen) {
         setMessages(prev => [...prev, {
