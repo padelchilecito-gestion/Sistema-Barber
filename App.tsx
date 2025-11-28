@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AppProvider } from './store/AppContext';
 import Layout from './components/Layout';
@@ -9,6 +8,7 @@ import FinancesPage from './pages/Finances';
 import AIAssistant from './pages/AIAssistant';
 import SettingsPage from './pages/Settings';
 import PremiumTools from './pages/PremiumTools';
+import InstallPWA from './components/InstallPWA'; // Importamos el nuevo componente
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -48,6 +48,7 @@ const App: React.FC = () => {
     return (
       <AppProvider>
          <div className="min-h-screen bg-slate-950 text-slate-100 font-sans p-4">
+            <InstallPWA /> {/* Botón de instalación para clientes */}
             <main className="max-w-md mx-auto h-[90vh] mt-4">
                 <AIAssistant isGuestMode={true} />
             </main>
@@ -58,6 +59,7 @@ const App: React.FC = () => {
 
   return (
     <AppProvider>
+      <InstallPWA /> {/* Botón de instalación para el administrador */}
       <Layout activeTab={activeTab} setActiveTab={setActiveTab}>
         {renderContent()}
       </Layout>
