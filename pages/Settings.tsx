@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../store/AppContext';
-import { auth } from '../firebase'; // Importamos auth
-import { updatePassword } from 'firebase/auth'; // Importamos updatePassword
-import { Clock, Plus, Trash2, Scissors, Save, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, X, Crown, Shield, Key } from 'lucide-react';
+import { auth } from '../firebase';
+import { updatePassword } from 'firebase/auth';
+import { Clock, Plus, Trash2, Scissors, Save, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, X, Crown, Shield, Key, Smartphone, Store } from 'lucide-react';
 import { WeeklySchedule, TimeRange, LicenseTier } from '../types';
 
 const DAY_LABELS: Record<string, string> = {
@@ -13,21 +13,30 @@ const DAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'satur
 const SettingsPage: React.FC = () => {
   const { services, settings, addService, removeService, updateSettings } = useApp();
   
-  // Estados locales
   const [newService, setNewService] = useState({ name: '', price: '', duration: '' });
   const [localSchedule, setLocalSchedule] = useState<WeeklySchedule>(settings.schedule);
+  
+  // Estado para datos del negocio
+  const [shopName, setShopName] = useState(settings.shopName || 'BarberPro Shop');
+  const [contactPhone, setContactPhone] = useState(settings.contactPhone || '');
+  
   const [isSaved, setIsSaved] = useState(false);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
 
-  // Estados para Cambio de Contraseña
   const [newPassword, setNewPassword] = useState('');
   const [passMessage, setPassMessage] = useState({ text: '', type: '' });
   const [updatingPass, setUpdatingPass] = useState(false);
 
+  // Sincronizar estado local si settings cambian en DB
+  useEffect(() => {
+    setShopName(settings.shopName || 'BarberPro Shop');
+    setContactPhone(settings.contactPhone || '');
+    setLocalSchedule(settings.schedule);
+  }, [settings]);
+
   const handleAddService = (e: React.FormEvent) => {
       e.preventDefault();
       if(!newService.name || !newService.price) return;
-      
       addService({
           id: Date.now().toString(),
           name: newService.name,
@@ -38,7 +47,12 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleSaveSettings = () => {
-      updateSettings({ ...settings, schedule: localSchedule });
+      updateSettings({ 
+          ...settings, 
+          schedule: localSchedule,
+          shopName: shopName,
+          contactPhone: contactPhone
+      });
       setIsSaved(true);
       setTimeout(() => setIsSaved(false), 2000);
   };
@@ -48,35 +62,28 @@ const SettingsPage: React.FC = () => {
       updateSettings({ ...settings, licenseTier: newTier });
   };
 
-  // --- LÓGICA DE CAMBIO DE CLAVE ---
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword.length < 6) {
-        setPassMessage({ text: 'La contraseña debe tener al menos 6 caracteres.', type: 'error' });
+        setPassMessage({ text: 'Mínimo 6 caracteres.', type: 'error' });
         return;
     }
     setUpdatingPass(true);
     setPassMessage({ text: '', type: '' });
-
     try {
         if (auth.currentUser) {
             await updatePassword(auth.currentUser, newPassword);
-            setPassMessage({ text: '¡Contraseña actualizada correctamente!', type: 'success' });
+            setPassMessage({ text: '¡Clave actualizada!', type: 'success' });
             setNewPassword('');
         }
     } catch (error: any) {
-        console.error(error);
-        if (error.code === 'auth/requires-recent-login') {
-            setPassMessage({ text: 'Por seguridad, cierra sesión y vuelve a entrar para cambiar la clave.', type: 'error' });
-        } else {
-            setPassMessage({ text: 'Error al actualizar. Intenta nuevamente.', type: 'error' });
-        }
+        setPassMessage({ text: 'Error o sesión expirada.', type: 'error' });
     } finally {
         setUpdatingPass(false);
     }
   };
 
-  // Funciones auxiliares de Horarios...
+  // Helpers de Horarios
   const toggleDayOpen = (day: string) => {
     setLocalSchedule(prev => ({ ...prev, [day]: { ...prev[day], isOpen: !prev[day].isOpen } }));
   };
@@ -98,6 +105,40 @@ const SettingsPage: React.FC = () => {
     <div className="space-y-8 pb-20">
       <h2 className="text-2xl font-bold text-white">Configuración</h2>
 
+      {/* General Data Section */}
+      <section className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
+          <div className="flex items-center gap-2 mb-4 text-amber-500">
+              <Store size={20} />
+              <h3 className="font-bold text-lg text-white">Datos del Negocio</h3>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                  <label className="text-xs text-slate-400 mb-1 block ml-1">Nombre de la Barbería</label>
+                  <input 
+                    type="text" 
+                    value={shopName}
+                    onChange={(e) => setShopName(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-amber-500 outline-none"
+                    placeholder="Ej: BarberPro"
+                  />
+              </div>
+              <div>
+                  <label className="text-xs text-slate-400 mb-1 block ml-1">Teléfono (para WhatsApp)</label>
+                  <div className="relative">
+                    <Smartphone className="absolute left-3 top-3.5 text-slate-500" size={18}/>
+                    <input 
+                        type="tel" 
+                        value={contactPhone}
+                        onChange={(e) => setContactPhone(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 pl-10 text-white focus:border-amber-500 outline-none"
+                        placeholder="Ej: 5491122334455"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1 ml-1">Incluye código de país, sin espacios ni +.</p>
+              </div>
+          </div>
+      </section>
+
       {/* License Section */}
       <section className="bg-gradient-to-r from-slate-800 to-slate-800 p-6 rounded-2xl border border-slate-700 relative overflow-hidden">
           <div className="relative z-10 flex items-center justify-between">
@@ -108,8 +149,8 @@ const SettingsPage: React.FC = () => {
                   </div>
                   <p className="text-slate-400 text-sm">
                       {settings.licenseTier === LicenseTier.PREMIUM 
-                        ? 'Tienes acceso a Visagismo IA y Sistema de Fidelización.' 
-                        : 'Estás en el plan Básico.'}
+                        ? 'Premium Activo.' 
+                        : 'Plan Básico.'}
                   </p>
               </div>
               <button 
@@ -120,67 +161,59 @@ const SettingsPage: React.FC = () => {
                     : 'bg-slate-700 border-slate-600 text-slate-300'
                 }`}
               >
-                  {settings.licenseTier === LicenseTier.PREMIUM ? 'PREMIUM ACTIVADO' : 'CAMBIAR A PREMIUM'}
+                  {settings.licenseTier === LicenseTier.PREMIUM ? 'PREMIUM ON' : 'PREMIUM OFF'}
               </button>
           </div>
       </section>
 
-      {/* Security Section (NUEVO) */}
+      {/* Security Section */}
       <section className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
           <div className="flex items-center gap-2 mb-4 text-amber-500">
               <Shield size={20} />
-              <h3 className="font-bold text-lg text-white">Seguridad</h3>
+              <h3 className="font-bold text-lg text-white">Seguridad Admin</h3>
           </div>
-          <p className="text-slate-400 text-sm mb-4">Actualiza tu contraseña de administrador.</p>
-          
-          <form onSubmit={handleChangePassword} className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
-              <div className="flex flex-col md:flex-row gap-3 items-end">
-                  <div className="w-full">
-                      <label className="block text-xs text-slate-500 uppercase font-bold mb-1 ml-1">Nueva Contraseña</label>
-                      <div className="relative">
-                          <Key className="absolute left-3 top-3 text-slate-500" size={16} />
-                          <input 
-                            type="password" 
-                            placeholder="Mínimo 6 caracteres"
-                            className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 pl-9 text-white text-sm outline-none focus:border-amber-500"
-                            value={newPassword}
-                            onChange={(e) => setNewPassword(e.target.value)}
-                          />
-                      </div>
+          <form onSubmit={handleChangePassword} className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 flex flex-col md:flex-row gap-3 items-end">
+              <div className="w-full">
+                  <label className="block text-xs text-slate-500 uppercase font-bold mb-1 ml-1">Nueva Contraseña</label>
+                  <div className="relative">
+                      <Key className="absolute left-3 top-3 text-slate-500" size={16} />
+                      <input 
+                        type="password" 
+                        placeholder="Mínimo 6 caracteres"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 pl-9 text-white text-sm outline-none focus:border-amber-500"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                      />
                   </div>
-                  <button 
-                    type="submit" 
-                    disabled={!newPassword || updatingPass}
-                    className="w-full md:w-auto px-6 py-2 bg-slate-700 hover:bg-amber-500 hover:text-slate-900 text-white rounded-lg font-bold text-sm transition-all disabled:opacity-50 h-[38px]"
-                  >
-                      {updatingPass ? 'Guardando...' : 'Cambiar Clave'}
-                  </button>
               </div>
-              {passMessage.text && (
-                  <p className={`text-xs mt-3 font-medium ${passMessage.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
-                      {passMessage.text}
-                  </p>
-              )}
+              <button 
+                type="submit" 
+                disabled={!newPassword || updatingPass}
+                className="w-full md:w-auto px-6 py-2 bg-slate-700 hover:bg-amber-500 hover:text-slate-900 text-white rounded-lg font-bold text-sm transition-all disabled:opacity-50 h-[38px]"
+              >
+                  {updatingPass ? '...' : 'Cambiar'}
+              </button>
           </form>
+          {passMessage.text && (
+              <p className={`text-xs mt-2 font-medium ml-1 ${passMessage.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+                  {passMessage.text}
+              </p>
+          )}
       </section>
 
       {/* Shop Hours Section */}
       <section className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
           <div className="flex items-center gap-2 mb-4 text-amber-500">
               <Clock size={20} />
-              <h3 className="font-bold text-lg text-white">Horarios de Atención</h3>
+              <h3 className="font-bold text-lg text-white">Horarios</h3>
           </div>
-          <p className="text-slate-400 text-sm mb-6">Configura tus horarios diarios.</p>
-          
           <div className="space-y-3">
             {DAY_KEYS.map(dayKey => {
               const daySchedule = localSchedule[dayKey];
               const isExpanded = expandedDay === dayKey;
               const hasRanges = daySchedule.ranges.length > 0;
-
               return (
                 <div key={dayKey} className={`rounded-xl border transition-all ${isExpanded ? 'bg-slate-900 border-amber-500/50' : 'bg-slate-900/50 border-slate-700'}`}>
-                  {/* Header Row */}
                   <div className="flex items-center justify-between p-4 cursor-pointer" onClick={() => setExpandedDay(isExpanded ? null : dayKey)}>
                     <div className="flex items-center gap-4">
                       <button 
@@ -189,126 +222,52 @@ const SettingsPage: React.FC = () => {
                       >
                         {daySchedule.isOpen ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
                       </button>
-                      <span className={`font-medium ${daySchedule.isOpen ? 'text-white' : 'text-slate-500'}`}>
-                        {DAY_LABELS[dayKey]}
-                      </span>
+                      <span className={`font-medium ${daySchedule.isOpen ? 'text-white' : 'text-slate-500'}`}>{DAY_LABELS[dayKey]}</span>
                     </div>
-                    
                     <div className="flex items-center gap-4">
-                      <span className="text-sm text-slate-400 hidden md:block">
-                        {!daySchedule.isOpen ? 'Cerrado' : 
-                         hasRanges ? daySchedule.ranges.map(r => `${r.start}-${r.end}`).join(', ') : 'Sin horarios'}
-                      </span>
+                      <span className="text-sm text-slate-400 hidden md:block">{!daySchedule.isOpen ? 'Cerrado' : hasRanges ? daySchedule.ranges.map(r => `${r.start}-${r.end}`).join(', ') : 'Sin horarios'}</span>
                       {isExpanded ? <ChevronUp size={20} className="text-slate-500" /> : <ChevronDown size={20} className="text-slate-500" />}
                     </div>
                   </div>
-
-                  {/* Expanded Edit Area */}
                   {isExpanded && daySchedule.isOpen && (
                     <div className="px-4 pb-4 border-t border-slate-800 pt-4 animate-in slide-in-from-top-2">
                        {daySchedule.ranges.map((range, idx) => (
                          <div key={idx} className="flex items-center gap-2 mb-3">
                             <div className="grid grid-cols-2 gap-2 flex-1">
-                                <div>
-                                  <label className="text-[10px] text-slate-500 uppercase block mb-1">Apertura</label>
-                                  <input 
-                                    type="time" 
-                                    value={range.start}
-                                    onChange={(e) => updateRange(dayKey, idx, 'start', e.target.value)}
-                                    className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:border-amber-500 outline-none"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="text-[10px] text-slate-500 uppercase block mb-1">Cierre</label>
-                                  <input 
-                                    type="time" 
-                                    value={range.end}
-                                    onChange={(e) => updateRange(dayKey, idx, 'end', e.target.value)}
-                                    className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:border-amber-500 outline-none"
-                                  />
-                                </div>
+                                <input type="time" value={range.start} onChange={(e) => updateRange(dayKey, idx, 'start', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm outline-none" />
+                                <input type="time" value={range.end} onChange={(e) => updateRange(dayKey, idx, 'end', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm outline-none" />
                             </div>
-                            <button 
-                              onClick={() => removeRange(dayKey, idx)}
-                              className="mt-5 p-2 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors">
-                              <X size={18} />
-                            </button>
+                            <button onClick={() => removeRange(dayKey, idx)} className="p-2 text-slate-500 hover:text-red-400"><X size={18} /></button>
                          </div>
                        ))}
-                       
-                       <button 
-                         onClick={() => addRange(dayKey)}
-                         className="mt-2 text-xs font-bold text-amber-500 flex items-center gap-1 hover:text-amber-400 px-2 py-1 rounded hover:bg-amber-500/10 transition-colors">
-                         <Plus size={14} /> AGREGAR TURNO
-                       </button>
+                       <button onClick={() => addRange(dayKey)} className="mt-2 text-xs font-bold text-amber-500 flex items-center gap-1 hover:text-amber-400 px-2 py-1 rounded hover:bg-amber-500/10"><Plus size={14} /> AGREGAR TURNO</button>
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
-
-          <button 
-            onClick={handleSaveSettings}
-            className={`mt-6 w-full md:w-auto px-8 py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${isSaved ? 'bg-green-600 text-white' : 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-900 hover:from-amber-400 hover:to-amber-500'}`}>
-              <Save size={18} /> {isSaved ? '¡Guardado Correctamente!' : 'Guardar Todos los Horarios'}
-          </button>
+          <button onClick={handleSaveSettings} className={`mt-6 w-full md:w-auto px-8 py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${isSaved ? 'bg-green-600 text-white' : 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-900 hover:from-amber-400 hover:to-amber-500'}`}><Save size={18} /> {isSaved ? '¡Guardado!' : 'Guardar Todo'}</button>
       </section>
 
       {/* Services Section */}
       <section className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
-          <div className="flex items-center gap-2 mb-4 text-amber-500">
-              <Scissors size={20} />
-              <h3 className="font-bold text-lg text-white">Servicios y Precios</h3>
-          </div>
-          
+          <div className="flex items-center gap-2 mb-4 text-amber-500"><Scissors size={20} /><h3 className="font-bold text-lg text-white">Servicios</h3></div>
           <div className="space-y-3 mb-8">
-              {services.length === 0 && <p className="text-slate-500 italic">No hay servicios configurados.</p>}
               {services.map(s => (
-                  <div key={s.id} className="flex items-center justify-between p-3 bg-slate-900/50 rounded-xl border border-slate-700/50 hover:border-slate-600 transition-colors">
-                      <div>
-                          <p className="text-white font-medium">{s.name}</p>
-                          <p className="text-xs text-slate-500">{s.durationMinutes} min</p>
-                      </div>
-                      <div className="flex items-center gap-4">
-                          <span className="text-amber-500 font-bold font-mono">${s.price}</span>
-                          <button onClick={() => removeService(s.id)} className="text-slate-600 hover:text-red-400 p-1">
-                              <Trash2 size={16} />
-                          </button>
-                      </div>
+                  <div key={s.id} className="flex items-center justify-between p-3 bg-slate-900/50 rounded-xl border border-slate-700/50">
+                      <div><p className="text-white font-medium">{s.name}</p><p className="text-xs text-slate-500">{s.durationMinutes} min</p></div>
+                      <div className="flex items-center gap-4"><span className="text-amber-500 font-bold font-mono">${s.price}</span><button onClick={() => removeService(s.id)} className="text-slate-600 hover:text-red-400 p-1"><Trash2 size={16} /></button></div>
                   </div>
               ))}
           </div>
-
           <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
-              <h4 className="text-sm font-bold text-white mb-3">Agregar Nuevo Servicio</h4>
+              <h4 className="text-sm font-bold text-white mb-3">Agregar Servicio</h4>
               <form onSubmit={handleAddService} className="flex flex-col md:flex-row gap-3">
-                  <input 
-                    placeholder="Nombre (ej: Corte Niño)" 
-                    className="flex-[2] bg-slate-800 border border-slate-700 rounded-lg p-2 text-white text-sm outline-none focus:border-amber-500"
-                    value={newService.name}
-                    onChange={e => setNewService({...newService, name: e.target.value})}
-                    required
-                  />
-                  <input 
-                    type="number" 
-                    placeholder="Precio ($)" 
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2 text-white text-sm outline-none focus:border-amber-500"
-                    value={newService.price}
-                    onChange={e => setNewService({...newService, price: e.target.value})}
-                    required
-                  />
-                  <input 
-                    type="number" 
-                    placeholder="Mins" 
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2 text-white text-sm outline-none focus:border-amber-500"
-                    value={newService.duration}
-                    onChange={e => setNewService({...newService, duration: e.target.value})}
-                    required
-                  />
-                  <button type="submit" className="bg-amber-500 hover:bg-amber-400 text-slate-900 p-2 rounded-lg flex items-center justify-center">
-                      <Plus size={20} />
-                  </button>
+                  <input placeholder="Nombre" className="flex-[2] bg-slate-800 border border-slate-700 rounded-lg p-2 text-white text-sm outline-none" value={newService.name} onChange={e => setNewService({...newService, name: e.target.value})} required />
+                  <input type="number" placeholder="$" className="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2 text-white text-sm outline-none" value={newService.price} onChange={e => setNewService({...newService, price: e.target.value})} required />
+                  <input type="number" placeholder="Min" className="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2 text-white text-sm outline-none" value={newService.duration} onChange={e => setNewService({...newService, duration: e.target.value})} required />
+                  <button type="submit" className="bg-amber-500 hover:bg-amber-400 text-slate-900 p-2 rounded-lg"><Plus size={20} /></button>
               </form>
           </div>
       </section>
