@@ -1,22 +1,25 @@
-
 import React, { useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { Client, LicenseTier, VisagismoResult } from '../types';
 import { suggestStyle, getVisagismAdvice } from '../services/geminiService';
-import { Phone, Calendar, Sparkles, User, FileText, Star, Crown, Scissors, Smile } from 'lucide-react';
+import { Phone, Calendar, Sparkles, User, FileText, Star, Crown, Scissors, Smile, Plus, X, Save } from 'lucide-react';
 
 const ClientsPage: React.FC = () => {
-  const { clients, settings } = useApp();
+  const { clients, settings, addClient } = useApp();
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  
+  // Estados para la IA y Visagismo
   const [aiSuggestion, setAiSuggestion] = useState<string>('');
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
-  
-  // Premium Visagismo State
   const [showVisagismo, setShowVisagismo] = useState(false);
   const [visagismoResult, setVisagismoResult] = useState<VisagismoResult | null>(null);
   const [vFace, setVFace] = useState('');
   const [vHair, setVHair] = useState('');
   const [loadingVisagismo, setLoadingVisagismo] = useState(false);
+
+  // Estados para el Modal de Nuevo Cliente
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newClient, setNewClient] = useState({ name: '', phone: '', notes: '' });
 
   const isPremium = settings.licenseTier === LicenseTier.PREMIUM;
 
@@ -43,13 +46,51 @@ const ClientsPage: React.FC = () => {
       finally { setLoadingVisagismo(false); }
   }
 
+  // --- LÓGICA PARA AGREGAR CLIENTE ---
+  const handleSaveClient = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newClient.name) return;
+
+      const clientData: Client = {
+          id: Date.now().toString(), // ID temporal, Firebase asignará el suyo
+          name: newClient.name,
+          phone: newClient.phone || '',
+          notes: newClient.notes || '',
+          totalVisits: 0,
+          loyaltyPoints: 0,
+          // Avatar por defecto generado con las iniciales
+          avatarUrl: `https://ui-avatars.com/api/?name=${newClient.name}&background=random`
+      };
+
+      addClient(clientData);
+      
+      // Reset y cerrar
+      setNewClient({ name: '', phone: '', notes: '' });
+      setShowAddModal(false);
+  };
+
   return (
-    <div className="space-y-6 h-full flex flex-col md:flex-row gap-6">
+    <div className="space-y-6 h-full flex flex-col md:flex-row gap-6 pb-20 relative">
       
       {/* List View */}
       <div className={`flex-1 ${selectedClient ? 'hidden md:block' : 'block'}`}>
-          <h2 className="text-2xl font-bold text-white mb-4">Clientes</h2>
-          <div className="space-y-3">
+          <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold text-white">Clientes</h2>
+              <button 
+                onClick={() => setShowAddModal(true)}
+                className="bg-amber-500 hover:bg-amber-400 text-slate-900 px-3 py-2 rounded-xl font-bold text-sm flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all active:scale-95">
+                  <Plus size={18} /> Nuevo
+              </button>
+          </div>
+
+          <div className="space-y-3 overflow-y-auto max-h-[80vh] custom-scrollbar pr-1">
+              {clients.length === 0 && (
+                  <div className="text-center py-8 text-slate-500 bg-slate-800/50 rounded-xl border border-slate-700 border-dashed">
+                      <User size={32} className="mx-auto mb-2 opacity-50" />
+                      <p>No hay clientes registrados.</p>
+                      <button onClick={() => setShowAddModal(true)} className="text-amber-500 font-bold text-sm mt-2 hover:underline">¡Agrega el primero!</button>
+                  </div>
+              )}
               {clients.map(client => (
                   <div key={client.id} 
                     onClick={() => { setSelectedClient(client); setAiSuggestion(''); setShowVisagismo(false); setVisagismoResult(null); }}
@@ -80,12 +121,12 @@ const ClientsPage: React.FC = () => {
       {/* Detail View */}
       <div className={`flex-[1.5] ${selectedClient ? 'block' : 'hidden md:block md:opacity-50'}`}>
         {selectedClient ? (
-            <div className="bg-slate-800 rounded-2xl border border-slate-700 p-6 sticky top-24 max-h-[85vh] overflow-y-auto custom-scrollbar">
-                <button onClick={() => setSelectedClient(null)} className="md:hidden text-slate-400 mb-4 hover:text-white">← Volver</button>
+            <div className="bg-slate-800 rounded-2xl border border-slate-700 p-6 sticky top-24 max-h-[85vh] overflow-y-auto custom-scrollbar animate-in slide-in-from-right-4">
+                <button onClick={() => setSelectedClient(null)} className="md:hidden text-slate-400 mb-4 hover:text-white flex items-center gap-1">← Volver</button>
                 
                 {/* Header Profile */}
                 <div className="flex items-center space-x-4 mb-6">
-                    <img src={selectedClient.avatarUrl} className="w-20 h-20 rounded-full border-2 border-amber-500" />
+                    <img src={selectedClient.avatarUrl || `https://ui-avatars.com/api/?name=${selectedClient.name}`} className="w-20 h-20 rounded-full border-2 border-amber-500 object-cover" />
                     <div>
                         <h2 className="text-2xl font-bold text-white">{selectedClient.name}</h2>
                         <div className="flex gap-2 mt-2">
@@ -115,7 +156,7 @@ const ClientsPage: React.FC = () => {
                             ))}
                         </div>
                         {selectedClient.loyaltyPoints >= 5 && (
-                             <div className="mt-3 bg-green-500/20 text-green-400 text-xs font-bold text-center py-1 rounded border border-green-500/30">
+                             <div className="mt-3 bg-green-500/20 text-green-400 text-xs font-bold text-center py-1 rounded border border-green-500/30 animate-pulse">
                                  ¡Premio Disponible!
                              </div>
                         )}
@@ -125,8 +166,8 @@ const ClientsPage: React.FC = () => {
                 <div className="space-y-6">
                     <div>
                         <h4 className="text-sm uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-2"><FileText size={14}/> Notas de Estilo</h4>
-                        <div className="bg-slate-900 p-4 rounded-xl border border-slate-700 text-slate-300">
-                            {selectedClient.notes}
+                        <div className="bg-slate-900 p-4 rounded-xl border border-slate-700 text-slate-300 min-h-[60px]">
+                            {selectedClient.notes || <span className="text-slate-600 italic">Sin notas registradas.</span>}
                         </div>
                     </div>
 
@@ -136,16 +177,16 @@ const ClientsPage: React.FC = () => {
                             <button 
                                 onClick={() => handleGetSuggestion(selectedClient)}
                                 disabled={loadingSuggestion}
-                                className="text-xs bg-amber-500/10 text-amber-500 px-2 py-1 rounded hover:bg-amber-500/20 disabled:opacity-50">
-                                Generar nueva
+                                className="text-xs bg-amber-500/10 text-amber-500 px-2 py-1 rounded hover:bg-amber-500/20 disabled:opacity-50 transition-colors">
+                                {aiSuggestion ? 'Regenerar' : 'Generar'}
                             </button>
                         </div>
                         
-                        <div className="bg-gradient-to-br from-indigo-900/30 to-purple-900/30 p-4 rounded-xl border border-indigo-500/30 min-h-[80px] flex items-center justify-center">
+                        <div className="bg-gradient-to-br from-indigo-900/30 to-purple-900/30 p-4 rounded-xl border border-indigo-500/30 min-h-[80px] flex items-center justify-center relative overflow-hidden">
                             {loadingSuggestion ? (
-                                <div className="text-indigo-400 animate-pulse text-sm">Analizando historial...</div>
+                                <div className="text-indigo-400 animate-pulse text-sm flex items-center gap-2"><Sparkles className="animate-spin" size={16}/> Analizando historial...</div>
                             ) : aiSuggestion ? (
-                                <p className="text-indigo-200 text-sm italic">"{aiSuggestion}"</p>
+                                <p className="text-indigo-200 text-sm italic animate-in fade-in">"{aiSuggestion}"</p>
                             ) : (
                                 <p className="text-slate-500 text-sm text-center">Toca 'Generar' para que la IA sugiera un estilo basado en el historial.</p>
                             )}
@@ -165,14 +206,14 @@ const ClientsPage: React.FC = () => {
                             {showVisagismo && (
                                 <div className="mt-4 bg-slate-900/50 p-4 rounded-xl border border-slate-700 animate-in slide-in-from-top-2">
                                     <div className="grid grid-cols-2 gap-3 mb-3">
-                                        <select className="bg-slate-800 text-white text-xs p-2 rounded" onChange={e => setVFace(e.target.value)}>
+                                        <select className="bg-slate-800 text-white text-xs p-2 rounded outline-none border border-slate-600 focus:border-indigo-500" onChange={e => setVFace(e.target.value)}>
                                             <option value="">Rostro...</option>
                                             <option value="Ovalado">Ovalado</option>
                                             <option value="Cuadrado">Cuadrado</option>
                                             <option value="Redondo">Redondo</option>
                                             <option value="Diamante">Diamante</option>
                                         </select>
-                                        <select className="bg-slate-800 text-white text-xs p-2 rounded" onChange={e => setVHair(e.target.value)}>
+                                        <select className="bg-slate-800 text-white text-xs p-2 rounded outline-none border border-slate-600 focus:border-indigo-500" onChange={e => setVHair(e.target.value)}>
                                             <option value="">Pelo...</option>
                                             <option value="Lacio">Lacio</option>
                                             <option value="Ondulado">Ondulado</option>
@@ -182,15 +223,15 @@ const ClientsPage: React.FC = () => {
                                     <button 
                                         onClick={handleVisagismo}
                                         disabled={loadingVisagismo || !vFace || !vHair}
-                                        className="w-full bg-indigo-600 text-white text-xs font-bold py-2 rounded hover:bg-indigo-500">
-                                        {loadingVisagismo ? '...' : 'Obtener Recomendación'}
+                                        className="w-full bg-indigo-600 text-white text-xs font-bold py-2 rounded hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                        {loadingVisagismo ? 'Analizando...' : 'Obtener Recomendación'}
                                     </button>
                                     
                                     {visagismoResult && (
-                                        <div className="mt-3 space-y-2">
+                                        <div className="mt-3 space-y-2 animate-in fade-in">
                                             {visagismoResult.recommendations.map((rec, idx) => (
                                                 <div key={idx} className="text-xs bg-slate-800 p-2 rounded border border-slate-700">
-                                                    <span className="text-amber-500 font-bold block">{rec.name}</span>
+                                                    <span className="text-amber-500 font-bold block mb-0.5">{rec.name}</span>
                                                     <span className="text-slate-400">{rec.description}</span>
                                                 </div>
                                             ))}
@@ -212,6 +253,66 @@ const ClientsPage: React.FC = () => {
             </div>
         )}
       </div>
+
+      {/* MODAL NUEVO CLIENTE */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-slate-800 rounded-2xl w-full max-w-md p-6 border border-slate-700 shadow-2xl scale-100 animate-in zoom-in-95 duration-200">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                      <User className="text-amber-500" /> Nuevo Cliente
+                    </h3>
+                    <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-white transition-colors">
+                        <X size={24} />
+                    </button>
+                </div>
+                
+                <form onSubmit={handleSaveClient} className="space-y-4">
+                    <div>
+                        <label className="block text-xs text-slate-400 mb-1 ml-1">Nombre Completo *</label>
+                        <input 
+                          type="text" 
+                          required 
+                          placeholder="Ej: Juan Pérez"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-amber-500 outline-none"
+                          value={newClient.name}
+                          onChange={e => setNewClient({...newClient, name: e.target.value})}
+                        />
+                    </div>
+                    
+                    <div>
+                        <label className="block text-xs text-slate-400 mb-1 ml-1">Teléfono</label>
+                        <input 
+                          type="tel" 
+                          placeholder="Ej: +54 9 11..."
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-amber-500 outline-none"
+                          value={newClient.phone}
+                          onChange={e => setNewClient({...newClient, phone: e.target.value})}
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs text-slate-400 mb-1 ml-1">Notas / Preferencias</label>
+                        <textarea 
+                          placeholder="Ej: Le gusta el degrade alto..."
+                          rows={3}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-amber-500 outline-none resize-none"
+                          value={newClient.notes}
+                          onChange={e => setNewClient({...newClient, notes: e.target.value})}
+                        />
+                    </div>
+
+                    <div className="pt-2">
+                        <button 
+                          type="submit" 
+                          className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 py-3 rounded-xl font-bold transition-all shadow-lg active:scale-95 flex justify-center items-center gap-2">
+                            <Save size={18} /> Guardar Cliente
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+      )}
     </div>
   );
 };
