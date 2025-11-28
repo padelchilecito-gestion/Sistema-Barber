@@ -1,29 +1,28 @@
-
 import React, { useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { Clock, Plus, Trash2, Scissors, Save, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, X, Crown } from 'lucide-react';
+import { auth } from '../firebase'; // Importamos auth
+import { updatePassword } from 'firebase/auth'; // Importamos updatePassword
+import { Clock, Plus, Trash2, Scissors, Save, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, X, Crown, Shield, Key } from 'lucide-react';
 import { WeeklySchedule, TimeRange, LicenseTier } from '../types';
 
 const DAY_LABELS: Record<string, string> = {
-  monday: 'Lunes',
-  tuesday: 'Martes',
-  wednesday: 'Miércoles',
-  thursday: 'Jueves',
-  friday: 'Viernes',
-  saturday: 'Sábado',
-  sunday: 'Domingo'
+  monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miércoles', thursday: 'Jueves', friday: 'Viernes', saturday: 'Sábado', sunday: 'Domingo'
 };
-
 const DAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
 const SettingsPage: React.FC = () => {
   const { services, settings, addService, removeService, updateSettings } = useApp();
   
-  // Local state for editing form
+  // Estados locales
   const [newService, setNewService] = useState({ name: '', price: '', duration: '' });
   const [localSchedule, setLocalSchedule] = useState<WeeklySchedule>(settings.schedule);
   const [isSaved, setIsSaved] = useState(false);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
+
+  // Estados para Cambio de Contraseña
+  const [newPassword, setNewPassword] = useState('');
+  const [passMessage, setPassMessage] = useState({ text: '', type: '' });
+  const [updatingPass, setUpdatingPass] = useState(false);
 
   const handleAddService = (e: React.FormEvent) => {
       e.preventDefault();
@@ -49,44 +48,49 @@ const SettingsPage: React.FC = () => {
       updateSettings({ ...settings, licenseTier: newTier });
   };
 
+  // --- LÓGICA DE CAMBIO DE CLAVE ---
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+        setPassMessage({ text: 'La contraseña debe tener al menos 6 caracteres.', type: 'error' });
+        return;
+    }
+    setUpdatingPass(true);
+    setPassMessage({ text: '', type: '' });
+
+    try {
+        if (auth.currentUser) {
+            await updatePassword(auth.currentUser, newPassword);
+            setPassMessage({ text: '¡Contraseña actualizada correctamente!', type: 'success' });
+            setNewPassword('');
+        }
+    } catch (error: any) {
+        console.error(error);
+        if (error.code === 'auth/requires-recent-login') {
+            setPassMessage({ text: 'Por seguridad, cierra sesión y vuelve a entrar para cambiar la clave.', type: 'error' });
+        } else {
+            setPassMessage({ text: 'Error al actualizar. Intenta nuevamente.', type: 'error' });
+        }
+    } finally {
+        setUpdatingPass(false);
+    }
+  };
+
+  // Funciones auxiliares de Horarios...
   const toggleDayOpen = (day: string) => {
-    setLocalSchedule(prev => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        isOpen: !prev[day].isOpen
-      }
-    }));
+    setLocalSchedule(prev => ({ ...prev, [day]: { ...prev[day], isOpen: !prev[day].isOpen } }));
   };
-
   const addRange = (day: string) => {
-    setLocalSchedule(prev => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        ranges: [...prev[day].ranges, { start: '09:00', end: '13:00' }]
-      }
-    }));
+    setLocalSchedule(prev => ({ ...prev, [day]: { ...prev[day], ranges: [...prev[day].ranges, { start: '09:00', end: '13:00' }] } }));
   };
-
   const removeRange = (day: string, index: number) => {
-    setLocalSchedule(prev => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        ranges: prev[day].ranges.filter((_, i) => i !== index)
-      }
-    }));
+    setLocalSchedule(prev => ({ ...prev, [day]: { ...prev[day], ranges: prev[day].ranges.filter((_, i) => i !== index) } }));
   };
-
   const updateRange = (day: string, index: number, field: keyof TimeRange, value: string) => {
     setLocalSchedule(prev => {
       const newRanges = [...prev[day].ranges];
       newRanges[index] = { ...newRanges[index], [field]: value };
-      return {
-        ...prev,
-        [day]: { ...prev[day], ranges: newRanges }
-      };
+      return { ...prev, [day]: { ...prev[day], ranges: newRanges } };
     });
   };
 
@@ -121,13 +125,52 @@ const SettingsPage: React.FC = () => {
           </div>
       </section>
 
+      {/* Security Section (NUEVO) */}
+      <section className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
+          <div className="flex items-center gap-2 mb-4 text-amber-500">
+              <Shield size={20} />
+              <h3 className="font-bold text-lg text-white">Seguridad</h3>
+          </div>
+          <p className="text-slate-400 text-sm mb-4">Actualiza tu contraseña de administrador.</p>
+          
+          <form onSubmit={handleChangePassword} className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
+              <div className="flex flex-col md:flex-row gap-3 items-end">
+                  <div className="w-full">
+                      <label className="block text-xs text-slate-500 uppercase font-bold mb-1 ml-1">Nueva Contraseña</label>
+                      <div className="relative">
+                          <Key className="absolute left-3 top-3 text-slate-500" size={16} />
+                          <input 
+                            type="password" 
+                            placeholder="Mínimo 6 caracteres"
+                            className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 pl-9 text-white text-sm outline-none focus:border-amber-500"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                          />
+                      </div>
+                  </div>
+                  <button 
+                    type="submit" 
+                    disabled={!newPassword || updatingPass}
+                    className="w-full md:w-auto px-6 py-2 bg-slate-700 hover:bg-amber-500 hover:text-slate-900 text-white rounded-lg font-bold text-sm transition-all disabled:opacity-50 h-[38px]"
+                  >
+                      {updatingPass ? 'Guardando...' : 'Cambiar Clave'}
+                  </button>
+              </div>
+              {passMessage.text && (
+                  <p className={`text-xs mt-3 font-medium ${passMessage.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+                      {passMessage.text}
+                  </p>
+              )}
+          </form>
+      </section>
+
       {/* Shop Hours Section */}
       <section className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
           <div className="flex items-center gap-2 mb-4 text-amber-500">
               <Clock size={20} />
               <h3 className="font-bold text-lg text-white">Horarios de Atención</h3>
           </div>
-          <p className="text-slate-400 text-sm mb-6">Configura tus horarios diarios. Puedes agregar turnos cortados (ej: mañana y tarde).</p>
+          <p className="text-slate-400 text-sm mb-6">Configura tus horarios diarios.</p>
           
           <div className="space-y-3">
             {DAY_KEYS.map(dayKey => {
@@ -218,9 +261,7 @@ const SettingsPage: React.FC = () => {
               <Scissors size={20} />
               <h3 className="font-bold text-lg text-white">Servicios y Precios</h3>
           </div>
-          <p className="text-slate-400 text-sm mb-6">La IA usará esta lista para dar precios a los clientes.</p>
-
-          {/* List */}
+          
           <div className="space-y-3 mb-8">
               {services.length === 0 && <p className="text-slate-500 italic">No hay servicios configurados.</p>}
               {services.map(s => (
@@ -239,7 +280,6 @@ const SettingsPage: React.FC = () => {
               ))}
           </div>
 
-          {/* Add Form */}
           <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
               <h4 className="text-sm font-bold text-white mb-3">Agregar Nuevo Servicio</h4>
               <form onSubmit={handleAddService} className="flex flex-col md:flex-row gap-3">
