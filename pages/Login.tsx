@@ -1,34 +1,55 @@
 import React, { useState } from 'react';
 import { auth } from '../firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { Lock, Mail, UserPlus, LogIn, AlertCircle } from 'lucide-react';
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { Lock, Mail, LogIn, AlertCircle, CheckCircle } from 'lucide-react';
 
 const Login: React.FC = () => {
-  const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Manejo del Login normal
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMsg('');
     setLoading(true);
 
     try {
-      if (isRegistering) {
-        await createUserWithEmailAndPassword(auth, email, password);
-      } else {
-        await signInWithEmailAndPassword(auth, email, password);
-      }
-      // El observador en App.tsx detectará el cambio y redirigirá automáticamente
+      await signInWithEmailAndPassword(auth, email, password);
+      // El observador en App.tsx redirigirá automáticamente
     } catch (err: any) {
       console.error(err);
-      let msg = 'Ocurrió un error.';
-      if (err.code === 'auth/invalid-credential') msg = 'Credenciales incorrectas.';
-      if (err.code === 'auth/email-already-in-use') msg = 'Este email ya está registrado.';
-      if (err.code === 'auth/weak-password') msg = 'La contraseña debe tener al menos 6 caracteres.';
-      setError(msg);
+      setLoading(false);
+      if (err.code === 'auth/invalid-credential') {
+        setError('Email o contraseña incorrectos.');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('Demasiados intentos fallidos. Intenta más tarde.');
+      } else {
+        setError('Error al iniciar sesión. Verifica tu conexión.');
+      }
+    }
+  };
+
+  // Manejo de Recuperación de Contraseña
+  const handleResetPassword = async () => {
+    if (!email) {
+      setError('Escribe tu email arriba para recuperar la contraseña.');
+      return;
+    }
+    setError('');
+    setSuccessMsg('');
+    setLoading(true);
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setSuccessMsg('¡Listo! Revisa tu correo para cambiar la clave.');
+    } catch (err: any) {
+      console.error(err);
+      setError('No se pudo enviar el correo. Verifica que el email sea correcto.');
+    } finally {
       setLoading(false);
     }
   };
@@ -40,17 +61,19 @@ const Login: React.FC = () => {
           <div className="bg-amber-500 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-900 shadow-lg shadow-amber-500/20">
             <Lock size={32} />
           </div>
-          <h2 className="text-2xl font-bold text-white">
-            {isRegistering ? 'Crear Administrador' : 'Acceso BarberPro'}
-          </h2>
-          <p className="text-slate-400 text-sm mt-2">
-            {isRegistering ? 'Registra tu cuenta principal' : 'Ingresa para gestionar tu negocio'}
-          </p>
+          <h2 className="text-2xl font-bold text-white">Administración</h2>
+          <p className="text-slate-400 text-sm mt-2">Acceso exclusivo para el dueño.</p>
         </div>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg mb-6 text-sm flex items-center gap-2">
+          <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg mb-6 text-sm flex items-center gap-2 animate-in fade-in">
             <AlertCircle size={16} /> {error}
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="bg-green-500/10 border border-green-500/20 text-green-400 p-3 rounded-lg mb-6 text-sm flex items-center gap-2 animate-in fade-in">
+            <CheckCircle size={16} /> {successMsg}
           </div>
         )}
 
@@ -90,20 +113,18 @@ const Login: React.FC = () => {
             disabled={loading}
             className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold py-3.5 rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-4"
           >
-            {loading ? 'Procesando...' : (isRegistering ? <UserPlus size={20}/> : <LogIn size={20}/>)}
-            {loading ? '' : (isRegistering ? 'Registrarme' : 'Ingresar')}
+            {loading ? 'Procesando...' : <LogIn size={20}/>}
+            {loading ? '' : 'Ingresar'}
           </button>
         </form>
 
         <div className="mt-6 text-center border-t border-slate-800 pt-6">
-          <p className="text-slate-500 text-sm mb-2">
-            {isRegistering ? '¿Ya tienes cuenta?' : '¿Es tu primera vez?'}
-          </p>
           <button 
-            onClick={() => { setIsRegistering(!isRegistering); setError(''); }}
-            className="text-amber-500 hover:text-amber-400 text-sm font-semibold hover:underline"
+            onClick={handleResetPassword}
+            type="button"
+            className="text-slate-500 hover:text-amber-500 text-sm transition-colors hover:underline"
           >
-            {isRegistering ? 'Inicia Sesión aquí' : 'Crear cuenta de Administrador'}
+            ¿Olvidaste tu contraseña?
           </button>
         </div>
       </div>
