@@ -93,7 +93,7 @@ const InstallPWA: React.FC = () => {
 
                   <div className="text-center mb-6">
                       <div className="w-16 h-16 bg-slate-700 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg border border-slate-600">
-                          <img src="https://cdn-icons-png.flaticon.com/512/3504/3504017.png" alt="Icon" className="w-10 h-10" />
+                          <img src="https://cdn-icons-png.flaticon.com/512/1454/1454472.png" alt="Icon" className="w-10 h-10" />
                       </div>
                       <h3 className="text-xl font-bold text-white mb-2">Instalar en iPhone</h3>
                       <p className="text-slate-400 text-sm">Agrega esta app a tu inicio para una mejor experiencia a pantalla completa.</p>
