@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { parseBookingMessage } from '../services/geminiService';
 import { ParsedBookingRequest, AppointmentStatus, ChatMessage } from '../types';
@@ -108,7 +107,8 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
         clientId: 'ai-guest',
         clientName: data.clientName || (isGuestMode ? 'Cliente Web' : 'Cliente WhatsApp'),
         service: data.service || 'Corte General',
-        stylePreference: data.stylePreference || undefined,
+        // CORRECCIÓN PRINCIPAL: Usamos '' si es undefined para evitar error en Firebase
+        stylePreference: data.stylePreference || '', 
         date: date,
         time: time,
         price: price, 
