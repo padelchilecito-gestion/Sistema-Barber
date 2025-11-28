@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../store/AppContext';
 import { auth } from '../firebase';
-import { updatePassword } from 'firebase/auth';
-import { Clock, Plus, Trash2, Scissors, Save, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, X, Crown, Shield, Key, Smartphone, Store } from 'lucide-react';
+import { updatePassword, updateEmail } from 'firebase/auth'; // Importamos updateEmail
+import { Clock, Plus, Trash2, Scissors, Save, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, X, Crown, Shield, Key, Smartphone, Store, Mail } from 'lucide-react';
 import { WeeklySchedule, TimeRange, LicenseTier } from '../types';
 
 const DAY_LABELS: Record<string, string> = {
@@ -23,11 +23,12 @@ const SettingsPage: React.FC = () => {
   const [isSaved, setIsSaved] = useState(false);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
 
+  // Estados para Seguridad (Email y Password)
+  const [newEmail, setNewEmail] = useState(auth.currentUser?.email || '');
   const [newPassword, setNewPassword] = useState('');
   const [passMessage, setPassMessage] = useState({ text: '', type: '' });
   const [updatingPass, setUpdatingPass] = useState(false);
 
-  // Sincronizar estado local si settings cambian en DB
   useEffect(() => {
     setShopName(settings.shopName || 'BarberPro Shop');
     setContactPhone(settings.contactPhone || '');
@@ -62,22 +63,52 @@ const SettingsPage: React.FC = () => {
       updateSettings({ ...settings, licenseTier: newTier });
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
+  // --- LÓGICA DE ACTUALIZACIÓN DE CREDENCIALES ---
+  const handleUpdateSecurity = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPassword.length < 6) {
-        setPassMessage({ text: 'Mínimo 6 caracteres.', type: 'error' });
-        return;
-    }
     setUpdatingPass(true);
     setPassMessage({ text: '', type: '' });
+
     try {
-        if (auth.currentUser) {
-            await updatePassword(auth.currentUser, newPassword);
-            setPassMessage({ text: '¡Clave actualizada!', type: 'success' });
-            setNewPassword('');
+        if (!auth.currentUser) throw new Error('No hay sesión activa.');
+
+        const promises = [];
+        
+        // 1. Actualizar Email si cambió
+        if (newEmail && newEmail !== auth.currentUser.email) {
+            promises.push(updateEmail(auth.currentUser, newEmail));
         }
+
+        // 2. Actualizar Password si escribió algo
+        if (newPassword) {
+            if (newPassword.length < 6) {
+                setPassMessage({ text: 'La clave debe tener 6+ caracteres.', type: 'error' });
+                setUpdatingPass(false);
+                return;
+            }
+            promises.push(updatePassword(auth.currentUser, newPassword));
+        }
+
+        if (promises.length === 0) {
+            setUpdatingPass(false);
+            return;
+        }
+
+        await Promise.all(promises);
+        setPassMessage({ text: '¡Datos actualizados correctamente!', type: 'success' });
+        setNewPassword(''); // Limpiamos el campo de password por seguridad
+        
     } catch (error: any) {
-        setPassMessage({ text: 'Error o sesión expirada.', type: 'error' });
+        console.error(error);
+        if (error.code === 'auth/requires-recent-login') {
+            setPassMessage({ text: 'Por seguridad, cierra sesión y vuelve a entrar para hacer estos cambios.', type: 'error' });
+        } else if (error.code === 'auth/email-already-in-use') {
+            setPassMessage({ text: 'Ese email ya está registrado en otro lado.', type: 'error' });
+        } else if (error.code === 'auth/invalid-email') {
+            setPassMessage({ text: 'El email no es válido.', type: 'error' });
+        } else {
+            setPassMessage({ text: 'Ocurrió un error al actualizar.', type: 'error' });
+        }
     } finally {
         setUpdatingPass(false);
     }
@@ -166,39 +197,60 @@ const SettingsPage: React.FC = () => {
           </div>
       </section>
 
-      {/* Security Section */}
+      {/* Security Section (ACTUALIZADO) */}
       <section className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
           <div className="flex items-center gap-2 mb-4 text-amber-500">
               <Shield size={20} />
               <h3 className="font-bold text-lg text-white">Seguridad Admin</h3>
           </div>
-          <form onSubmit={handleChangePassword} className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 flex flex-col md:flex-row gap-3 items-end">
-              <div className="w-full">
-                  <label className="block text-xs text-slate-500 uppercase font-bold mb-1 ml-1">Nueva Contraseña</label>
-                  <div className="relative">
-                      <Key className="absolute left-3 top-3 text-slate-500" size={16} />
-                      <input 
-                        type="password" 
-                        placeholder="Mínimo 6 caracteres"
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 pl-9 text-white text-sm outline-none focus:border-amber-500"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                      />
+          <p className="text-slate-400 text-sm mb-4">Actualiza tu usuario (email) o contraseña.</p>
+          
+          <form onSubmit={handleUpdateSecurity} className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                      <label className="block text-xs text-slate-500 uppercase font-bold mb-1 ml-1">Email (Usuario)</label>
+                      <div className="relative">
+                          <Mail className="absolute left-3 top-3 text-slate-500" size={16} />
+                          <input 
+                            type="email" 
+                            required
+                            className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 pl-9 text-white text-sm outline-none focus:border-amber-500"
+                            value={newEmail}
+                            onChange={(e) => setNewEmail(e.target.value)}
+                          />
+                      </div>
+                  </div>
+                  <div>
+                      <label className="block text-xs text-slate-500 uppercase font-bold mb-1 ml-1">Nueva Contraseña</label>
+                      <div className="relative">
+                          <Key className="absolute left-3 top-3 text-slate-500" size={16} />
+                          <input 
+                            type="password" 
+                            placeholder="Dejar vacío para no cambiar"
+                            className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 pl-9 text-white text-sm outline-none focus:border-amber-500"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                          />
+                      </div>
                   </div>
               </div>
-              <button 
-                type="submit" 
-                disabled={!newPassword || updatingPass}
-                className="w-full md:w-auto px-6 py-2 bg-slate-700 hover:bg-amber-500 hover:text-slate-900 text-white rounded-lg font-bold text-sm transition-all disabled:opacity-50 h-[38px]"
-              >
-                  {updatingPass ? '...' : 'Cambiar'}
-              </button>
+              
+              <div className="flex justify-end">
+                  <button 
+                    type="submit" 
+                    disabled={updatingPass}
+                    className="w-full md:w-auto px-6 py-2 bg-slate-700 hover:bg-amber-500 hover:text-slate-900 text-white rounded-lg font-bold text-sm transition-all disabled:opacity-50"
+                  >
+                      {updatingPass ? 'Guardando...' : 'Actualizar Credenciales'}
+                  </button>
+              </div>
+              
+              {passMessage.text && (
+                  <div className={`p-3 rounded-lg text-xs font-bold flex items-center justify-center ${passMessage.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                      {passMessage.text}
+                  </div>
+              )}
           </form>
-          {passMessage.text && (
-              <p className={`text-xs mt-2 font-medium ml-1 ${passMessage.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
-                  {passMessage.text}
-              </p>
-          )}
       </section>
 
       {/* Shop Hours Section */}
