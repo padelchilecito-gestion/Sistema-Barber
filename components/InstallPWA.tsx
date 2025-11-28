@@ -28,7 +28,6 @@ const InstallPWA: React.FC = () => {
 
     window.addEventListener('beforeinstallprompt', handler);
 
-    // Si es iOS, mostramos el botón (pero lanzará el modal de instrucciones)
     if (isIosDevice) {
         setSupportsPWA(true);
     }
@@ -38,25 +37,19 @@ const InstallPWA: React.FC = () => {
 
   const handleInstallClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    
     if (isIOS) {
-        // En iOS no hay evento programático, mostramos instrucciones
         setShowIOSInstructions(true);
         return;
     }
+    if (!promptInstall) return;
 
-    if (!promptInstall) {
-        return;
-    }
-
-    // Android/Desktop: lanzamos el prompt nativo
     promptInstall.prompt();
     promptInstall.userChoice.then((choiceResult: any) => {
         if (choiceResult.outcome === 'accepted') {
             console.log('Usuario aceptó instalar');
         }
         setPromptInstall(null);
-        setSupportsPWA(false); // Ocultamos el botón tras instalar
+        setSupportsPWA(false);
     });
   };
 
@@ -64,16 +57,17 @@ const InstallPWA: React.FC = () => {
 
   return (
     <>
-      {/* --- BOTÓN FLOTANTE --- */}
-      <div className="fixed bottom-24 md:bottom-6 left-1/2 transform -translate-x-1/2 md:left-auto md:right-6 md:translate-x-0 z-50 animate-in slide-in-from-bottom-4 fade-in duration-700">
+      {/* --- BOTÓN FLOTANTE (MOVIDO ARRIBA A LA DERECHA) --- */}
+      <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top-4 fade-in duration-700">
         <button
           onClick={handleInstallClick}
-          className="bg-white/10 backdrop-blur-md border border-white/20 text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-3 hover:bg-white/20 transition-all active:scale-95 group"
+          className="bg-white/10 backdrop-blur-md border border-white/20 text-white p-2 md:px-5 md:py-3 rounded-full shadow-2xl flex items-center gap-3 hover:bg-white/20 transition-all active:scale-95 group"
         >
           <div className="bg-amber-500 p-1.5 rounded-full text-slate-900 group-hover:rotate-12 transition-transform">
              <Download size={18} strokeWidth={3} />
           </div>
-          <div className="flex flex-col items-start">
+          {/* Texto visible solo en pantallas medianas para no tapar en celular */}
+          <div className="hidden md:flex flex-col items-start">
              <span className="text-xs font-bold text-amber-500 uppercase leading-none">Instalar App</span>
              <span className="text-[10px] text-slate-300 leading-none mt-1">Acceso rápido</span>
           </div>
@@ -93,7 +87,6 @@ const InstallPWA: React.FC = () => {
 
                   <div className="text-center mb-6">
                       <div className="w-16 h-16 bg-slate-700 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg border border-slate-600 p-2">
-                          {/* URL ACTUALIZADA: Ícono de Cerebro con Tijeras */}
                           <img src="https://cdn-icons-png.flaticon.com/512/11031/11031295.png" alt="Icon" className="w-full h-full object-contain" />
                       </div>
                       <h3 className="text-xl font-bold text-white mb-2">Instalar en iPhone</h3>
@@ -120,11 +113,6 @@ const InstallPWA: React.FC = () => {
                   
                   <div className="mt-6 text-center">
                       <button onClick={() => setShowIOSInstructions(false)} className="text-amber-500 font-bold text-sm">Entendido</button>
-                  </div>
-                  
-                  {/* Flecha indicadora para el botón compartir de Safari */}
-                  <div className="absolute -bottom-10 left-1/2 transform -translate-x-1/2 text-white animate-bounce md:hidden">
-                      ⬇
                   </div>
               </div>
           </div>
