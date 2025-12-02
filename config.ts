@@ -7,7 +7,7 @@ export const PROJECT_STATUS = {
   isActive: true, 
   
   // Datos que verá tu cliente
-  providerName: "Cominucate conmigo para reguralizar la cuenta  ", 
+  providerName: "Eduardo Ricci ", 
   providerWhatsapp: "3825625422", // Tu número real
   providerEmail: "edur900@gmail.com"
 };
