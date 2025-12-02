@@ -1,5 +1,6 @@
+// App.tsx
 import React, { useState, useEffect } from 'react';
-import { AppProvider } from './store/AppContext';
+import { AppProvider } from './store/AppContext'; // Importaciones corregidas sin src
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import CalendarPage from './pages/Calendar';
@@ -9,11 +10,22 @@ import AIAssistant from './pages/AIAssistant';
 import SettingsPage from './pages/Settings';
 import PremiumTools from './pages/PremiumTools';
 import InstallPWA from './components/InstallPWA';
-import Login from './pages/Login'; // Importamos Login
-import { auth } from './firebase'; // Importamos Auth
-import { onAuthStateChanged, User } from 'firebase/auth'; // Listener de sesión
+import Login from './pages/Login';
+import { auth } from './firebase';
+import { onAuthStateChanged, User } from 'firebase/auth';
+
+// --- NUEVAS IMPORTACIONES ---
+import { PROJECT_STATUS } from './config';  // Archivo en la misma carpeta raíz
+import SuspendedView from './components/SuspendedView'; // Archivo en carpeta components
+// ----------------------------
 
 const App: React.FC = () => {
+  // 1. --- EL INTERRUPTOR DE CORTE ---
+  if (!PROJECT_STATUS.isActive) {
+    return <SuspendedView />;
+  }
+  // ----------------------------------
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isGuestMode, setIsGuestMode] = useState(false);
   
@@ -43,8 +55,7 @@ const App: React.FC = () => {
       }
     }
 
-    // 2. Listener de Firebase Auth (Persistencia de Sesión)
-    // Esto revisa automáticamente si ya estabas logueado al recargar
+    // 2. Listener de Firebase Auth
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
@@ -80,7 +91,7 @@ const App: React.FC = () => {
     );
   }
 
-  // --- PANTALLA DE CARGA (Mientras verifica sesión) ---
+  // --- PANTALLA DE CARGA ---
   if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
@@ -89,12 +100,12 @@ const App: React.FC = () => {
     );
   }
 
-  // --- VISTA DE LOGIN (Si no hay usuario y no es invitado) ---
+  // --- VISTA DE LOGIN ---
   if (!user) {
     return <Login />;
   }
 
-  // --- VISTA ADMINISTRADOR (Protegida) ---
+  // --- VISTA ADMINISTRADOR ---
   return (
     <AppProvider>
       <InstallPWA />
