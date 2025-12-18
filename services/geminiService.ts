@@ -4,14 +4,15 @@ import { ParsedBookingRequest, ServiceItem, ShopSettings, ChatMessage, Visagismo
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 if (!apiKey) {
-  console.error("⚠️ ERROR CRÍTICO: No se encontró VITE_GEMINI_API_KEY.");
+  console.error("⚠️ ERROR CRÍTICO: No se encontró VITE_GEMINI_API_KEY. Revisa tu archivo .env");
 }
 
 const genAI = new GoogleGenerativeAI(apiKey || "dummy-key");
 
-// CORRECCIÓN: Usamos 'gemini-pro' (versión 1.0 estable) como fallback seguro
-// ya que 'gemini-1.5-flash' te está dando error 404 en tu cuenta.
-const MODEL_NAME = "gemini-pro"; 
+// --- CONFIGURACIÓN DEL MODELO ---
+// Usamos 'gemini-1.5-flash'. Este es el modelo estándar actual.
+// Si esto da error 404, es 100% seguro que necesitas crear una nueva API Key en aistudio.google.com
+const MODEL_NAME = "gemini-1.5-flash"; 
 
 const DAY_TRANSLATIONS: Record<string, string> = {
   sunday: 'Domingo', monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miércoles', thursday: 'Jueves', friday: 'Viernes', saturday: 'Sábado'
@@ -67,7 +68,6 @@ DATOS EN TIEMPO REAL:
 
 ⚠️ REGLA DE ORO (CRÍTICA):
 Si el cliente pide turno para HOY (${todayISO}), ESTÁ PROHIBIDO ofrecer horarios anteriores a ${currentTime}.
-Ejemplo: Si son las 10:58, NO ofrezcas las 09:00, 10:00 ni 10:30. Solo ofrece horarios FUTUROS (ej: 11:00 en adelante).
 
 HORARIOS DE ATENCIÓN:
 ${scheduleString}
@@ -92,8 +92,6 @@ Responde SIEMPRE en JSON válido:
 `;
   
   try {
-      // Nota: gemini-pro a veces es más estricto con el systemInstruction en versiones viejas de la API,
-      // pero con la librería @google/generative-ai actual funciona bien.
       const model = genAI.getGenerativeModel({ 
         model: MODEL_NAME,
         systemInstruction: systemInstruction,
@@ -107,8 +105,8 @@ Responde SIEMPRE en JSON válido:
   } catch (error) {
       console.error("AI Error:", error);
       return {
-          thought_process: "Error",
-          suggestedReply: "Tuve un error técnico. ¿Me repites la fecha y hora?",
+          thought_process: "Error de conexión",
+          suggestedReply: "Estoy teniendo problemas para conectar con mi cerebro digital. Por favor, intenta de nuevo en unos segundos o verifica tu conexión.",
           isComplete: false
       };
   }
