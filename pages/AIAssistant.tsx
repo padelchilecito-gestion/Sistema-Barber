@@ -1,9 +1,8 @@
-// ... (imports iguales)
 import React, { useState, useRef, useEffect } from 'react';
 import { parseBookingMessage } from '../services/geminiService';
 import { ParsedBookingRequest, AppointmentStatus, ChatMessage, WeeklySchedule } from '../types';
 import { useApp } from '../store/AppContext';
-import { MessageSquare, Send, Copy, Bot, User, CheckCircle, CalendarPlus, Loader2, Scissors, CalendarCheck, Smartphone, LogIn } from 'lucide-react';
+import { MessageSquare, Send, Copy, Bot, User, CheckCircle, CalendarPlus, Loader2, Scissors, CalendarCheck, Smartphone, LogIn, Clock } from 'lucide-react';
 
 interface AIAssistantProps {
     navigateToCalendar?: () => void;
@@ -11,12 +10,15 @@ interface AIAssistantProps {
 }
 
 const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMode = false }) => {
-  // ... (estados y useEffects iguales)
   const { addAppointment, appointments, services, settings } = useApp();
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [lastBookingData, setLastBookingData] = useState<ParsedBookingRequest | null>(null);
+  
+  // --- NUEVO: Estado para el Temporizador (Cooldown) ---
+  // 5 RPM = 60s / 5 = 12 segundos de espera entre mensajes.
+  const [cooldown, setCooldown] = useState(0); 
 
   const initialMessage = isGuestMode 
     ? '¡Hola! 👋 Soy el asistente virtual de la barbería. ¿Qué día y hora te gustaría reservar tu turno?'
@@ -28,6 +30,14 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
   const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); };
   useEffect(() => { scrollToBottom(); }, [messages]);
 
+  // --- NUEVO: Efecto para bajar el contador cada segundo ---
+  useEffect(() => {
+    if (cooldown > 0) {
+      const timer = setTimeout(() => setCooldown(prev => prev - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [cooldown]);
+
   const getBusySlotsContext = () => {
     const now = new Date();
     const upcoming = appointments.filter(a => {
@@ -38,49 +48,33 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
     return upcoming.map(a => `- ${a.date} a las ${a.time} (${a.clientName})`).join('\n');
   };
 
-  // --- VALIDACIÓN ESTRICTA ACTUALIZADA ---
   const validateShopHours = (dateStr: string, timeStr: string, schedule: WeeklySchedule): { isOpen: boolean; reason?: string } => {
     try {
-        // 1. Parseo de fecha
         const [year, month, day] = dateStr.split('-').map(Number);
         const bookingDate = new Date(year, month - 1, day); 
-        
-        // 2. ¿Es una fecha pasada? (Ayer o antes)
         const now = new Date();
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         
-        if (bookingDate < todayStart) {
-             return { isOpen: false, reason: "La fecha seleccionada ya pasó." };
-        }
+        if (bookingDate < todayStart) return { isOpen: false, reason: "La fecha seleccionada ya pasó." };
 
-        // 3. ¿Es HOY? Validar hora pasada
         if (bookingDate.getTime() === todayStart.getTime()) {
              const [reqH, reqM] = timeStr.split(':').map(Number);
              const nowH = now.getHours();
              const nowM = now.getMinutes();
-             
-             // Si la hora solicitada es menor a la actual
              if (reqH < nowH || (reqH === nowH && reqM < nowM)) {
                  return { isOpen: false, reason: "Ese horario ya pasó hoy. Elige uno futuro." };
              }
         }
 
-        // 4. Validación de Días y Horarios de Apertura
         const dayIndex = bookingDate.getDay(); 
         const dayKeys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
         const dayKey = dayKeys[dayIndex];
-        const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-        const dayName = dayNames[dayIndex];
-
         const daySchedule = schedule[dayKey];
-        if (!daySchedule || !daySchedule.isOpen) {
-            return { isOpen: false, reason: `El local está cerrado los ${dayName}s.` };
-        }
+        
+        if (!daySchedule || !daySchedule.isOpen) return { isOpen: false, reason: `El local está cerrado ese día.` };
 
-        // 5. Validación de Rangos
         const [reqH, reqM] = timeStr.split(':').map(Number);
         const reqMinutes = reqH * 60 + reqM;
-
         const isWithinRange = daySchedule.ranges.some(range => {
             const [startH, startM] = range.start.split(':').map(Number);
             const [endH, endM] = range.end.split(':').map(Number);
@@ -89,38 +83,37 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
             return reqMinutes >= startMinutes && reqMinutes < endMinutes;
         });
 
-        if (!isWithinRange) {
-            const rangesStr = daySchedule.ranges.map(r => `${r.start} a ${r.end}`).join(' o de ');
-            return { isOpen: false, reason: `Los ${dayName}s atendemos de ${rangesStr}.` };
-        }
+        if (!isWithinRange) return { isOpen: false, reason: `Estamos cerrados a esa hora.` };
 
         return { isOpen: true };
-
     } catch (e) {
-        console.error("Error validando horario", e);
         return { isOpen: false, reason: "Error al verificar horario." }; 
     }
   };
 
   const handleAnalyze = async () => {
     if (!inputMessage.trim()) return;
+    
+    // --- NUEVO: Evitar envío si hay cooldown ---
+    if (cooldown > 0) return;
 
     const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', text: inputMessage };
     const updatedHistory = [...messages, userMsg];
     setMessages(updatedHistory);
     setInputMessage('');
     setLoading(true);
+    
+    // --- NUEVO: Activar cooldown de 12 segundos ---
+    setCooldown(12);
 
     try {
       const busySlots = getBusySlotsContext();
       const parsed = await parseBookingMessage(userMsg.text, updatedHistory, busySlots, services, settings, isGuestMode);
       
-      // Override de seguridad
       if (parsed.isComplete && parsed.date && parsed.time) {
           const check = validateShopHours(parsed.date, parsed.time, settings.schedule);
           if (!check.isOpen) {
               parsed.isComplete = false;
-              // Mensaje corregido
               parsed.suggestedReply = `Disculpa, ${check.reason?.toLowerCase()} ¿Te sirve otro horario?`;
               parsed.time = undefined; 
           }
@@ -189,7 +182,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
       window.location.href = '/';
   };
 
-  // --- RENDER ---
   if (isGuestMode && bookingConfirmed) {
       return (
           <div className="flex flex-col items-center justify-center h-full p-8 text-center animate-in zoom-in duration-500 relative">
@@ -249,7 +241,23 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ navigateToCalendar, isGuestMo
 
       <div className={`p-3 rounded-2xl border flex items-end gap-2 shadow-2xl ${isGuestMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-800 border-slate-700'}`}>
           <textarea className="flex-1 bg-transparent text-white p-3 max-h-[120px] outline-none resize-none placeholder:text-slate-600 font-medium" placeholder={isGuestMode ? "Escribe aquí..." : "Pega aquí el mensaje..."} rows={1} value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAnalyze(); } }} />
-          <button onClick={handleAnalyze} disabled={!inputMessage.trim() || loading} className="p-3 bg-amber-500 hover:bg-amber-400 text-slate-900 rounded-xl transition-colors disabled:opacity-50 disabled:bg-slate-800 disabled:text-slate-600 mb-1"><Send size={20} /></button>
+          
+          {/* --- BOTÓN DE ENVIAR MODIFICADO CON COOLDOWN --- */}
+          <button 
+            onClick={handleAnalyze} 
+            disabled={!inputMessage.trim() || loading || cooldown > 0} 
+            className={`p-3 rounded-xl transition-all mb-1 flex items-center justify-center min-w-[50px]
+                ${cooldown > 0 
+                    ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
+                    : 'bg-amber-500 hover:bg-amber-400 text-slate-900'
+                } disabled:opacity-50 disabled:bg-slate-800 disabled:text-slate-600`}
+          >
+             {cooldown > 0 ? (
+                 <span className="text-xs font-bold font-mono">{cooldown}s</span>
+             ) : (
+                 <Send size={20} />
+             )}
+          </button>
       </div>
     </div>
   );
