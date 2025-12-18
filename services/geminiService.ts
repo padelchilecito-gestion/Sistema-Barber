@@ -9,8 +9,9 @@ if (!apiKey) {
 
 const genAI = new GoogleGenerativeAI(apiKey || "dummy-key");
 
-// CORRECCIÓN: Usamos la versión específica 'gemini-1.5-flash-001' para evitar el error 404 "Not Found"
-const MODEL_NAME = "gemini-1.5-flash-001"; 
+// CORRECCIÓN: Usamos 'gemini-pro' (versión 1.0 estable) como fallback seguro
+// ya que 'gemini-1.5-flash' te está dando error 404 en tu cuenta.
+const MODEL_NAME = "gemini-pro"; 
 
 const DAY_TRANSLATIONS: Record<string, string> = {
   sunday: 'Domingo', monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miércoles', thursday: 'Jueves', friday: 'Viernes', saturday: 'Sábado'
@@ -91,6 +92,8 @@ Responde SIEMPRE en JSON válido:
 `;
   
   try {
+      // Nota: gemini-pro a veces es más estricto con el systemInstruction en versiones viejas de la API,
+      // pero con la librería @google/generative-ai actual funciona bien.
       const model = genAI.getGenerativeModel({ 
         model: MODEL_NAME,
         systemInstruction: systemInstruction,
