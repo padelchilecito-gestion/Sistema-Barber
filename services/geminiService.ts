@@ -9,7 +9,8 @@ if (!apiKey) {
 
 const genAI = new GoogleGenerativeAI(apiKey || "dummy-key");
 
-const MODEL_NAME = "gemini-1.5-flash"; 
+// CORRECCIÓN: Usamos la versión específica 'gemini-1.5-flash-001' para evitar el error 404 "Not Found"
+const MODEL_NAME = "gemini-1.5-flash-001"; 
 
 const DAY_TRANSLATIONS: Record<string, string> = {
   sunday: 'Domingo', monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miércoles', thursday: 'Jueves', friday: 'Viernes', saturday: 'Sábado'
@@ -110,7 +111,6 @@ Responde SIEMPRE en JSON válido:
   }
 };
 
-// ... (El resto de funciones suggestStyle y getVisagismAdvice quedan igual)
 export const suggestStyle = async (clientHistory: string): Promise<string> => {
     try {
         const model = genAI.getGenerativeModel({ model: MODEL_NAME });
