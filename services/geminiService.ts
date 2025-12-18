@@ -9,7 +9,7 @@ if (!apiKey) {
 
 const genAI = new GoogleGenerativeAI(apiKey || "dummy-key");
 
-const MODEL_NAME = "gemini-2.0-flash"; 
+const MODEL_NAME = "gemini-1.5-flash"; 
 
 const DAY_TRANSLATIONS: Record<string, string> = {
   sunday: 'Domingo', monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miércoles', thursday: 'Jueves', friday: 'Viernes', saturday: 'Sábado'
