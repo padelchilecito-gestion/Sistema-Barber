@@ -1,9 +1,9 @@
 import React from 'react';
-import { Calendar, Users, DollarSign, MessageSquare, Scissors, Home, Settings, Crown, LogOut } from 'lucide-react'; // Import LogOut
+import { Calendar, Users, DollarSign, MessageSquare, Scissors, Home, Settings, Crown, LogOut, Terminal } from 'lucide-react'; 
 import { useApp } from '../store/AppContext';
 import { LicenseTier } from '../types';
-import { auth } from '../firebase'; // Import auth
-import { signOut } from 'firebase/auth'; // Import signOut
+import { auth } from '../firebase'; 
+import { signOut } from 'firebase/auth'; 
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -52,8 +52,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
       </main>
 
       {/* Desktop Sidebar Navigation */}
-      <nav className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-20 bg-slate-800 border-r border-slate-700 items-center py-6 space-y-8 z-30">
-        <div className="bg-amber-500 p-2 rounded-xl text-slate-900 mb-4">
+      <nav className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-20 bg-slate-800 border-r border-slate-700 items-center py-6 z-30">
+        <div className="bg-amber-500 p-2 rounded-xl text-slate-900 mb-8 shadow-lg shadow-amber-500/20">
              <Scissors size={28} />
         </div>
         
@@ -65,20 +65,31 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
                     className={`p-3 rounded-xl transition-all duration-200 group relative flex justify-center ${activeTab === item.id ? 'bg-slate-700 text-amber-500' : 'text-slate-400 hover:text-slate-200'}`}
                 >
                     {item.icon}
-                    <span className="absolute left-14 bg-slate-700 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                    <span className="absolute left-14 bg-slate-700 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 border border-slate-600 shadow-xl">
                         {item.label}
                     </span>
                 </button>
             ))}
         </div>
 
-        {/* Desktop Logout */}
-        <button 
-            onClick={handleLogout}
-            className="mb-4 text-slate-500 hover:text-red-400 p-3 hover:bg-slate-700/50 rounded-xl transition-colors" 
-            title="Cerrar Sesión">
-            <LogOut size={24} />
-        </button>
+        {/* Footer Actions */}
+        <div className="flex flex-col items-center gap-4 mt-auto">
+            {/* Logout */}
+            <button 
+                onClick={handleLogout}
+                className="text-slate-500 hover:text-red-400 p-3 hover:bg-slate-700/50 rounded-xl transition-colors" 
+                title="Cerrar Sesión">
+                <LogOut size={24} />
+            </button>
+            
+            {/* Developer Credit - Sutil */}
+            <div className="text-[10px] text-slate-700 font-mono hover:text-slate-500 transition-colors cursor-default group relative" title="Eduardo Ricci Dev">
+                ER
+                <span className="absolute left-10 bottom-0 bg-slate-900 border border-slate-700 text-slate-400 text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none w-max">
+                  Dev: Eduardo Ricci
+                </span>
+            </div>
+        </div>
       </nav>
 
       {/* Mobile Bottom Navigation */}
