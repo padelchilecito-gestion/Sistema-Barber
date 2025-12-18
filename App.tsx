@@ -21,6 +21,7 @@ import SuspendedView from './components/SuspendedView'; // Archivo en carpeta co
 
 const App: React.FC = () => {
   // 1. --- EL INTERRUPTOR DE CORTE ---
+  console.log("Estado del proyecto:", PROJECT_STATUS.isActive);
   if (!PROJECT_STATUS.isActive) {
     return <SuspendedView />;
   }
