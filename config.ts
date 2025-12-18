@@ -4,7 +4,7 @@ export const PROJECT_STATUS = {
   // --- INTERRUPTOR PRINCIPAL ---
   // true = El sitio funciona normal
   // false = Muestra la pantalla de bloqueo (falta de pago)
-  isActive: false, 
+  isActive: true, 
   
   // Datos que verá tu cliente
   providerName: "Eduardo Ricci ", 
