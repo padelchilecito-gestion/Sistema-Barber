@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { auth } from '../firebase';
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
-import { Lock, Mail, LogIn, AlertCircle, CheckCircle } from 'lucide-react';
+import { Lock, Mail, LogIn, AlertCircle, CheckCircle, Code } from 'lucide-react';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -55,8 +55,8 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl w-full max-w-md shadow-2xl">
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative">
+      <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl w-full max-w-md shadow-2xl z-10">
         <div className="text-center mb-8">
           <div className="bg-amber-500 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-900 shadow-lg shadow-amber-500/20">
             <Lock size={32} />
@@ -127,6 +127,13 @@ const Login: React.FC = () => {
             ¿Olvidaste tu contraseña?
           </button>
         </div>
+      </div>
+
+      {/* CRÉDITO DEL DESARROLLADOR - EDUARDO RICCI */}
+      <div className="mt-8 text-center opacity-40 hover:opacity-80 transition-opacity">
+          <p className="text-[10px] text-slate-500 uppercase tracking-widest flex items-center gap-1 justify-center">
+             <Code size={10} /> Dev by Eduardo Ricci
+          </p>
       </div>
     </div>
   );
