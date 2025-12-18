@@ -12,7 +12,7 @@ const genAI = new GoogleGenerativeAI(apiKey || "dummy-key");
 // --- CONFIGURACIÓN DEL MODELO ---
 // Usamos 'gemini-1.5-flash'. Este es el modelo estándar actual.
 // Si esto da error 404, es 100% seguro que necesitas crear una nueva API Key en aistudio.google.com
-const MODEL_NAME = "gemini-1.5-flash"; 
+const MODEL_NAME = "gemini-3-flash"; 
 
 const DAY_TRANSLATIONS: Record<string, string> = {
   sunday: 'Domingo', monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miércoles', thursday: 'Jueves', friday: 'Viernes', saturday: 'Sábado'
