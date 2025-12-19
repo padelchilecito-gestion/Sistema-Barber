@@ -1,6 +1,5 @@
-// App.tsx
 import React, { useState, useEffect } from 'react';
-import { AppProvider } from './store/AppContext'; // Importaciones corregidas sin src
+import { AppProvider } from './store/AppContext';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import CalendarPage from './pages/Calendar';
@@ -14,28 +13,22 @@ import Login from './pages/Login';
 import { auth } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
-// --- NUEVAS IMPORTACIONES ---
-import { PROJECT_STATUS } from './config';  // Archivo en la misma carpeta raíz
-import SuspendedView from './components/SuspendedView'; // Archivo en carpeta components
-// ----------------------------
+// --- KILL SWITCH (CONTROL AUTOMÁTICO) ---
+import { useLicense } from './hooks/useLicense';
+import SuspendedView from './components/SuspendedView';
+// ----------------------------------------
 
 const App: React.FC = () => {
-  // 1. --- EL INTERRUPTOR DE CORTE ---
-  console.log("Estado del proyecto:", PROJECT_STATUS.isActive);
-  if (!PROJECT_STATUS.isActive) {
-    return <SuspendedView />;
-  }
-  // ----------------------------------
+  // 1. VERIFICACIÓN DE LICENCIA
+  const { isLocked, loading: licenseLoading } = useLicense();
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isGuestMode, setIsGuestMode] = useState(false);
-  
-  // Estados de Autenticación
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
-    // 1. Lógica de Cliente / Invitado
+    // Lógica Cliente / Invitado
     const params = new URLSearchParams(window.location.search);
     const viewParam = params.get('view');
     const storedMode = localStorage.getItem('barber_app_mode');
@@ -49,14 +42,10 @@ const App: React.FC = () => {
       setIsGuestMode(false);
     }
     else {
-      if (storedMode === 'guest') {
-        setIsGuestMode(true);
-      } else {
-        setIsGuestMode(false);
-      }
+      setIsGuestMode(storedMode === 'guest');
     }
 
-    // 2. Listener de Firebase Auth
+    // Auth Listener
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
@@ -64,6 +53,22 @@ const App: React.FC = () => {
 
     return () => unsubscribe();
   }, []);
+
+  // 2. SPINNER DE CARGA INICIAL (Evita parpadeo)
+  if (licenseLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-amber-500"></div>
+      </div>
+    );
+  }
+
+  // 3. BLOQUEO TOTAL SI LA LICENCIA ESTÁ INACTIVA
+  if (isLocked) {
+    return <SuspendedView />;
+  }
+
+  // --- RENDERIZADO DE CONTENIDO NORMAL ---
 
   const renderContent = () => {
     switch (activeTab) {
@@ -78,7 +83,7 @@ const App: React.FC = () => {
     }
   };
 
-  // --- VISTA MODO INVITADO (CLIENTE) ---
+  // VISTA MODO INVITADO
   if (isGuestMode) {
     return (
       <AppProvider>
@@ -92,21 +97,21 @@ const App: React.FC = () => {
     );
   }
 
-  // --- PANTALLA DE CARGA ---
+  // SPINNER DE AUTH (Solo si la licencia pasó)
   if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-amber-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
       </div>
     );
   }
 
-  // --- VISTA DE LOGIN ---
+  // VISTA LOGIN ADMIN
   if (!user) {
     return <Login />;
   }
 
-  // --- VISTA ADMINISTRADOR ---
+  // VISTA PRINCIPAL
   return (
     <AppProvider>
       <InstallPWA />
