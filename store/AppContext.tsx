@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Appointment, AppointmentStatus, Client, Transaction, ServiceItem, ShopSettings, LicenseTier, WeeklySchedule, GalleryItem } from '../types';
-import { db } from '../firebase'; 
+import { db, auth } from '../firebase'; // Asegúrate de importar auth
 import { 
   collection, 
   addDoc, 
@@ -10,6 +10,7 @@ import {
   onSnapshot,
   setDoc
 } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth'; // Import necesario
 
 interface AppState {
   appointments: Appointment[];
@@ -31,9 +32,7 @@ interface AppState {
 
 const AppContext = createContext<AppState | undefined>(undefined);
 
-// --- 1. CONFIGURACIÓN DE HORARIOS POR DEFECTO (CORREGIDA) ---
 const createDefaultSchedule = (): WeeklySchedule => {
-  // Lunes a Viernes: 9-13 y 18-22 (Corrección solicitada: Tarde arranca 18hs)
   const weekdaySchedule = {
     isOpen: true,
     ranges: [
@@ -41,19 +40,11 @@ const createDefaultSchedule = (): WeeklySchedule => {
       { start: '18:00', end: '22:00' }
     ]
   };
-  
-  // Sábado: Solo mañana de 9 a 13
   const saturdaySchedule = {
     isOpen: true,
-    ranges: [
-      { start: '09:00', end: '13:00' }
-    ]
+    ranges: [{ start: '09:00', end: '13:00' }]
   };
-  
-  const closedSchedule = {
-    isOpen: false,
-    ranges: []
-  };
+  const closedSchedule = { isOpen: false, ranges: [] };
 
   return {
     monday: weekdaySchedule,
@@ -61,7 +52,7 @@ const createDefaultSchedule = (): WeeklySchedule => {
     wednesday: weekdaySchedule,
     thursday: weekdaySchedule,
     friday: weekdaySchedule,
-    saturday: saturdaySchedule, // Aplica horario de sábado
+    saturday: saturdaySchedule,
     sunday: closedSchedule
   };
 };
@@ -82,21 +73,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
 
   useEffect(() => {
-    // --- Listeners de Firebase ---
+    // 1. DATOS PÚBLICOS (Siempre se cargan)
     const unsubApt = onSnapshot(collection(db, 'appointments'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
       setAppointments(data);
-    });
-
-    const unsubCli = onSnapshot(collection(db, 'clients'), (snapshot) => {
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
-        setClients(data);
-    });
-
-    const unsubTx = onSnapshot(collection(db, 'transactions'), (snapshot) => {
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
-        setTransactions(data);
-    });
+    }, (error) => console.log("Modo invitado: Lectura de turnos limitada o pública"));
 
     const unsubSrv = onSnapshot(collection(db, 'services'), (snapshot) => {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceItem));
@@ -108,32 +89,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setGallery(data.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     });
 
-    // --- Sincronización de Configuración y Auto-Reparación ---
     const unsubSet = onSnapshot(doc(db, 'config', 'main'), (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data() as ShopSettings;
-            
-            // Si la data viene vacía o corrupta, o queremos forzar la actualización de estructura
             if (!data.schedule || !data.schedule.monday) {
-                console.warn("Configuración incompleta. Aplicando valores por defecto...");
-                setDoc(doc(db, 'config', 'main'), DEFAULT_SETTINGS); 
                 setSettings(DEFAULT_SETTINGS);
             } else {
                 setSettings(data);
             }
         } else {
-            // Si no existe el documento, lo creamos con los nuevos horarios
             setDoc(doc(db, 'config', 'main'), DEFAULT_SETTINGS);
             setSettings(DEFAULT_SETTINGS);
         }
     });
 
+    // 2. DATOS PRIVADOS (Solo si es Admin)
+    let unsubCli = () => {};
+    let unsubTx = () => {};
+
+    const authUnsub = onAuthStateChanged(auth, (user) => {
+        if (user) {
+            // Usuario logueado: Cargamos datos sensibles
+            unsubCli = onSnapshot(collection(db, 'clients'), (snapshot) => {
+                const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
+                setClients(data);
+            });
+    
+            unsubTx = onSnapshot(collection(db, 'transactions'), (snapshot) => {
+                const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
+                setTransactions(data);
+            });
+        } else {
+            // Usuario no logueado: Limpiamos datos sensibles
+            setClients([]);
+            setTransactions([]);
+            // Cancelamos suscripciones anteriores si existían
+            unsubCli();
+            unsubTx();
+        }
+    });
+
     return () => {
-        unsubApt(); unsubCli(); unsubTx(); unsubSrv(); unsubSet(); unsubGal();
+        unsubApt(); unsubSrv(); unsubSet(); unsubGal();
+        unsubCli(); unsubTx(); authUnsub();
     };
   }, []);
 
-  // --- Actions ---
   const addAppointment = async (apt: Appointment) => {
     const { id, ...rest } = apt;
     const safeData = JSON.parse(JSON.stringify(rest));
